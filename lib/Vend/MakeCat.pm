@@ -2,9 +2,15 @@
 #
 # MakeCat.pm - routines for catalog configurator
 #
-# $Id $
+# $Id: MakeCat.pm,v 1.4 2000/02/07 10:31:44 mike Exp $
 #
-# Copyright 1996-1998 by Michael J. Heins <mikeh@iac.net>
+# Copyright 1996-2000 by Michael J. Heins <mikeh@minivend.com>
+#
+# This program was originally based on Vend 0.2
+# Copyright 1995 by Andrew M. Wilcox <awilcox@world.std.com>
+#
+# Portions from Vend 0.3
+# Copyright 1995 by Andrew M. Wilcox <awilcox@world.std.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,9 +22,10 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+# You should have received a copy of the GNU General Public
+# License along with this program; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+# MA  02111-1307  USA.
 
 ## END CONFIGURABLE VARIABLES
 
@@ -27,9 +34,7 @@ package Vend::MakeCat;
 use Cwd;
 use File::Find;
 use File::Copy;
-BEGIN { $SIG{"__WARN__"} = sub { warn $_[0] if $DOWARN } }
-use Archive::Tar;
-BEGIN { $DOWARN = 1 }
+use File::Basename;
 
 require Exporter;
 @ISA = qw(Exporter);
@@ -56,12 +61,13 @@ sethistory
 use strict;
 
 use vars qw($Force $Error $History $VERSION);
-$VERSION = substr(q$Revision: 1.8 $, 10);
+$VERSION = substr(q$Revision: 1.4 $, 10);
 
 $Force = 0;
 $History = 0;
 my %Pretty = qw(
 
+	aliases         Aliases
 	basedir         BaseDir
 	catuser			CatUser
 	cgibase         CgiBase
@@ -77,7 +83,7 @@ my %Pretty = qw(
 	samplehtml      SampleHtml
 	sampledir       SampleDir
 	sampleurl       SampleUrl
-	servername      ServerConf
+	serverconf      ServerConf
 	servername      ServerName
 	catroot         CatRoot
 	vendroot        VendRoot
@@ -87,6 +93,20 @@ my %Pretty = qw(
  
 my %Desc = (
 
+	aliases    =>  <<EOF,
+#
+# Additional URL locations for the CGI program, as with CgiUrl.
+# This is used when calling the catalog from more than one place,
+# perhaps because your secure server is not the same name as the
+# non-secure one.
+#
+# http://www.secure.domain/secure-bin/prog
+#                         ^^^^^^^^^^^^^^^^
+#
+# We set it to the name of the catalog by default to enable the
+# internal HTTTP server.
+#
+EOF
 	basedir    =>  <<EOF,
 # 
 # DIRECTORY where the MiniVend catalog directories will go. These
@@ -115,8 +135,8 @@ EOF
 #
 EOF
 	cgidir     =>  <<EOF,
-# The location of the normal CGI directory. This is a UNIX
-# file name, not a script alias.
+# The location of the normal CGI directory. This is a
+# file path, not a script alias.
 #
 # If all of your CGI programs must end in .cgi, this is
 # should be the same as your HTML directory.
@@ -134,17 +154,21 @@ EOF
 #
 EOF
 	demotype   =>  <<EOF,
-# The type of demo catalog to use, sample or simple.
+# The type of demo catalog to use. Standard types
+# distributed are:
 #
-#    sample -- frame-based high-end catalog
-#    simple -- no frames, good basic catalog
+#    simple   -- database-based catalog, not really simple 8-)
+#    basic    -- simplified set of features
 #
 # If you have defined your own custom template catalog,
 # you can enter it's name.
+#
+# If you are new to MiniVend and not a sophisticated web designer,
+# use "basic" to start with.
 EOF
 	documentroot    =>  <<EOF,
 # The base directory for HTML for this (possibly virtual) domain.
-# This is a UNIX directory name, not a URL -- it is your HTML
+# This is a directory path name, not a URL -- it is your HTML
 # directory.
 #
 EOF
@@ -177,7 +201,7 @@ EOF
 # 
 EOF
 	imagedir   =>  <<EOF,
-# Where the sample images should be installed. A UNIX directory
+# Where the image files should be copied. A directory path
 # name, not a URL.
 #
 EOF
@@ -186,7 +210,7 @@ EOF
 # directive in the catalog configuration file. This is a URL
 # fragment, not a directory or file name.
 #
-#         <IMG SRC="/sample/images/icon.gif">
+#         <IMG SRC="/simple/images/icon.gif">
 #                   ^^^^^^^^^^^^^^
 #
 EOF
@@ -244,7 +268,7 @@ sub findexe {
  
 sub findfiles {
     my($file) = @_;
-	return undef if $ =~ /win32/i;
+	return undef if $^O =~ /win32/i;
 	my $cmd;
 	my @files;
     if($cmd = findexe('locate')) {
@@ -269,7 +293,7 @@ sub description {
 }
 
 sub can_do_suid {
-	return 0 if $ =~ /win32/i;
+	return 0 if $^O =~ /win32/i;
 	my $file = "tmp$$.fil";
 	my $status;
 
@@ -282,7 +306,7 @@ sub can_do_suid {
 }
 
 sub get_id {
-	return 'everybody' if $ =~ /win32/i;
+	return 'everybody' if $^O =~ /win32/i;
     my $file = -f "$::VendRoot/error.log"
                 ? "$::VendRoot/error.log" : '';
     return '' unless $file;
@@ -294,7 +318,7 @@ sub get_id {
 }
 
 sub get_ids {
-	return ('everybody', 'nogroup') if $ =~ /win32/i;
+	return ('everybody', 'nogroup') if $^O =~ /win32/i;
 	my $file = "tmp$$.fil";
 	my ($name, $group);
 
@@ -307,9 +331,120 @@ sub get_ids {
 	return ($name,$group);
 }
 
+my $Windows = ($^O =~ /win32/i ? 1 : 0);
+
+sub compare_file {
+    my($first,$second) = @_;
+    return 0 unless -s $first == -s $second;
+    local $/;
+    open(FIRST, $first) or return undef;
+    open(SECOND, $second) or (close FIRST and return undef);
+    binmode(FIRST);
+    binmode(SECOND);
+    $first = '';
+    $second = '';
+    while($first eq $second) {
+        read(FIRST, $first, 1024);
+        read(SECOND, $second, 1024);
+        last if length($first) < 1024;
+    }
+    close FIRST;
+    close SECOND;
+    $first eq $second;
+}
+
+sub install_file {
+    my ($srcdir, $targdir, $filename, $opt) = @_;
+	$opt = {} unless $opt;
+	if (ref $srcdir) {
+		$opt = $srcdir;
+		$srcdir  = $opt->{Source} || die "Source dir for install_file not set.\n";
+		$targdir = $opt->{Target} || die "Target dir for install_file not set.\n";
+		$filename = $opt->{Filename} || die "File name for install_file not set.\n";
+	}
+    my $srcfile  = $srcdir . '/' . $filename;
+    my $targfile = $targdir . '/' . $filename;
+    my $mkdir = File::Basename::dirname($targfile);
+    my $extra;
+    my $perms;
+
+    if(! -d $mkdir) {
+        File::Path::mkpath($mkdir)
+            or die "Couldn't make directory $mkdir: $!\n";
+    }
+
+    if (! -f $srcfile) {
+        die "Source file $srcfile missing.\n";
+    }
+    elsif (
+		$opt->{Perm_hash}
+			and $opt->{Perm_hash}->{$filename}
+		)
+	{
+        $perms = $opt->{Perm_hash}->{$filename};
+	}
+    elsif ( $opt->{Perms} =~ /^(m|g)/i ) {
+        $perms = (stat(_))[2] | 0660;
+	}
+    elsif ( $opt->{Perms} =~ /^u/i ) {
+        $perms = (stat(_))[2] | 0600;
+	}
+    else {
+        $perms = (stat(_))[2] & 0777;
+    }
+
+    if( ! $Windows and -f $targfile and ! compare_file($srcfile, $targfile) ) {
+        open (GETVER, $targfile)
+            or die "Couldn't read $targfile for version update: $!\n";
+        while(<GETVER>) {
+            /VERSION\s+=.*?\s+([\d.]+)/ or next;
+            $extra = $1;
+            $extra =~ tr/0-9//cd;
+            last;
+        }
+        $extra = 'old' unless $extra;
+        while (-f "$targfile.$extra") {
+            $extra .= '~';
+        }
+        rename $targfile, "$targfile.$extra"
+            or die "Couldn't rename $targfile to $targfile.$extra: $!\n";
+    }
+
+    File::Copy::copy($srcfile, $targfile)
+        or die "Copy of $srcfile to $targfile failed: $!\n";
+	if($opt->{Substitute}) {
+			my $bak = "$targfile.mv";
+			rename $targfile, $bak;
+			open(SOURCE, $bak)			or die "open $bak: $!\n";
+			open(TARGET, ">$targfile")		or die "create $targfile: $!\n";
+			local($/) = undef;
+			my $page = <SOURCE>; close SOURCE;
+
+			$page =~ s/^#>>(.*)(__MVR_(\w+)__.*)\n\1.*/#>>$1$2/mg;
+			$page =~ s/^#>>(.*__MVR_(\w+)__.*)/#>>$1\n$1/mg;
+			1 while $page =~ s/^([^#].*)__MVR_(.*)/$1__MVC_$2/mg;
+			$page =~ s/__MVC_(\w+)__/$opt->{Substitute}{lc $1}/g;
+
+			print TARGET $page				or die "print $targfile: $!\n";
+			close TARGET					or die "close $targfile: $!\n";
+			unlink $bak						or die "unlink $bak: $!\n";
+	}
+    chmod $perms, $targfile;
+}
+
 sub copy_current_to_dir {
     my($target_dir, $exclude_pattern) = @_;
-    my $orig_dir = cwd();
+	return copy_dir('.', $target_dir, $exclude_pattern);
+}
+
+sub copy_dir {
+    my($source_dir, $target_dir, $exclude_pattern) = @_;
+	return undef unless -d $source_dir;
+	my $orig_dir;
+	if($source_dir ne '.') {
+		$orig_dir = cwd();
+		chdir $source_dir or die "chdir: $!\n";
+	}
     my @files; 
     my $wanted = sub {  
         return unless -f $_;
@@ -320,22 +455,15 @@ sub copy_current_to_dir {
     };
     File::Find::find($wanted, '.');  
 
-	if (-f "$::VendRoot/bad_tar_pm") {
-		my $f = "/tmp/mv_bad_tar_pm";
-		open(TARCAT, "> $f") or die "Can't fork: $!\n";
-		for(@files) { print TARCAT "$_\n" }
-		close TARCAT;
-		system "cat $f | xargs tar cf - | (cd $target_dir; tar xf -)";
-		unlink $f;
-		die "File copy failed: $!\n" if $?;
-		return 1;
-	}
-
-    my $tar = Archive::Tar->new();   
-    $tar->add_files(@files);
-    chdir $target_dir   or die "Can't change directory to $target_dir: $!\n";
-    $tar->extract(@files);
-    chdir $orig_dir     or die "Can't change directory to $orig_dir: $!\n";
+	eval {
+		for(@files) {
+			install_file('.', $target_dir, $_);
+		}
+	};
+	my $msg = $@;
+	chdir $orig_dir if $orig_dir;
+	die "$msg" if $msg;
+	return 1;
 }
 
 use vars q!$Prompt_sub!;
@@ -347,16 +475,19 @@ eval {
     import Term::ReadLine;
     $term = new Term::ReadLine::Perl 'MiniVend Configuration';
 	die "No Term::ReadLine::Perl" unless defined $term;
-	$term->MinLine(4);
+
+	readline::rl_bind('C-B', 'catch_at');
     $Prompt_sub = sub {
                     my ($prompt, $default) = @_;
 					if($Force) {
-						print "\n";
+						print "$prompt SET TO --> $default\n";
 						return $default;
 					}
                     $prompt =~ s/^\s*(\n+)/print $1/ge;
                     $prompt =~ s/\n+//g;
-                    return $term->readline($prompt, $default);
+                    my $out = $term->readline($prompt, $default);
+					return '@' if ! defined $out;
+					return $out;
                     };
     $History_add = sub {
                     my ($line) = @_;
@@ -377,13 +508,14 @@ sub prompt {
     my($prompt) = shift || '? ';
     my($default) = shift;
 	if($Force) {
-		print "\n";
+		print "$prompt SET TO --> $default\n";
 		return $default;
 	}
     my($ans);
 
     print $prompt;
     print "[$default] " if $default;
+	local ($/) = "\n";
     chomp($ans = <STDIN>);
     $ans ? $ans : $default;
 }
@@ -408,8 +540,9 @@ sub do_msg {
 	return $msg;
 }
 
+
 sub add_catalog {
-		my ($file, $directive, $configname, $value) = @_;
+		my ($file, $directive, $configname, $value, $dynamic) = @_;
 		my ($newcfgline, $mark, @out);
 		my ($tmpfile) = "$file.$$";
 		if (-f $file) {
@@ -443,6 +576,30 @@ sub add_catalog {
 		}
 		close NEWCFG || die "close: $!\n";
 		unlink $tmpfile;
+
+		if($dynamic and ! $Windows) {
+			my $pidfile = $dynamic;
+			$pidfile =~ s:/[^/]+$::;
+			$pidfile .= '/minivend.pid';
+			my $pid;
+			PID: {
+				local ($/);
+				open(PID,$pidfile) or die "open $pidfile: $!\n";
+				$pid = <PID>;
+				$pid =~ /(\d+)/;
+				$pid = $1;
+			}
+
+			open(RESTART, "<+$dynamic") or
+				open(RESTART, ">>$dynamic") or
+					die "Couldn't write $dynamic to add catalog: $!\n";
+			Vend::Util::lockfile(\*RESTART, 1, 1) 	or die "lock $dynamic: $!\n";
+			printf RESTART "%-19s %s\n", $directive, $value;
+			Vend::Util::unlockfile(\*RESTART) 		or die "unlock $dynamic: $!\n";
+			close RESTART;
+			kill 'HUP', $pid;
+		}
+		1;
 }
 
 my %Http_hash = (
@@ -489,7 +646,7 @@ sub conf_parse_http {
 	$data =~ s!
 				<virtualhost
 				\s+
-					([^>]+)
+					([^>\n]+)
 				\s*>\s+
 					([\000-\377]*?)
 				</virtualhost>!
@@ -524,11 +681,17 @@ sub conf_parse_http {
 
 		undef $servname;
 		@data = split /[\r\n]+/, $virtual->{$handle};
+		my $port = $handle;
+		$port =~ s/.*:(\d+).*/$1/ or $port = '';
 		@data = grep /^\s*[^#]/, @data;
 		for(@data) {
 			next unless /^\s*servername\s+(.*)/i;
 			$servname = $1;
-			if(defined $servers->{$servname}) {
+			$servname =~ s/\s+$//;
+			if(defined $servers->{$servname} and $port) {
+				$servname .= ":$port";
+			}
+			elsif(defined $servers->{$servname} and $port) {
 				$Error = "Server $servname defined twice.";
 				return undef;
 			}
@@ -536,7 +699,8 @@ sub conf_parse_http {
 		}
 		
 		if($handle eq ' ') {
-			chomp($servname = `hostname`) unless $servname;
+			$servname = `hostname` unless $servname;
+			$servname =~ s/\s+$//;
 			$main = $servname;
 		}
 		next unless $servname;
@@ -551,6 +715,7 @@ sub conf_parse_http {
 				$servers->{$servname}->{$directive} = {}
 					unless defined $servers->{$servname}->{$directive};
 				($key,$val) = split /\s+/, $param, 2;
+				$val =~ s/^\s*"// and $val =~ s/"\s*$//;
 				if (defined $Http_process{$directive}) {
 					$key = &{$Http_process{$directive}}('key', $key);
 					$val = &{$Http_process{$directive}}('value', $val);
@@ -558,6 +723,7 @@ sub conf_parse_http {
 				$servers->{$servname}->{$directive}->{$key} = $val;
 			}
 			elsif(defined $Http_scalar{$directive}) {
+				$param =~ s/^"// and $param =~ s/"\s*$//;
 				if (defined $servers->{$servname}->{$directive}) {
 					undef $servers->{$servname};
 					$Error = "$directive defined twice in $servname, only allowed once.";
@@ -572,6 +738,14 @@ sub conf_parse_http {
 	}
 			
 	return $servers;
+}
+
+package readline;
+
+use vars qw/$AcceptLine/;
+
+sub F_Catch_at {
+		$AcceptLine = '@';
 }
 
 __END__

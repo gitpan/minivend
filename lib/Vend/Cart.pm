@@ -1,17 +1,16 @@
 #!/usr/bin/perl
 #
-# MiniVend version 2.03
+# MiniVend version 3.12
 #
-# $Id: Cart.pm,v 1.9 1998/01/31 05:14:12 mike Exp $
+# $Id: Cart.pm,v 1.2 2000/02/06 01:48:00 mike Exp $
 #
-# This program is largely based on Vend 0.2
+# Copyright 1996-2000 by Michael J. Heins <mikeh@minivend.com>
+#
+# This program was originally based on Vend 0.2
 # Copyright 1995 by Andrew M. Wilcox <awilcox@world.std.com>
 #
 # Portions from Vend 0.3
 # Copyright 1995 by Andrew M. Wilcox <awilcox@world.std.com>
-#
-# Enhancements made by and
-# Copyright 1996 by Michael J. Heins <mikeh@iac.net>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,98 +22,48 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+# You should have received a copy of the GNU General Public
+# License along with this program; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+# MA  02111-1307  USA.
 
 package Vend::Cart;
-require Exporter;
 
-@ISA = qw(Exporter);
+$VERSION = substr(q$Revision: 1.2 $, 10);
 
-@EXPORT = qw(get_cart set_cart toss_cart);
-@EXPORT_OK = qw(create add set);
-
-
-$VERSION = substr(q$Revision: 1.9 $, 10);
-$DEBUG   = 0;
-
-use Carp;
-use vars qw($DEBUG $VERSION);
 use strict;
 
-sub create {
-    my($name, @attributes) = @_;
-	croak "New shopping cart $name defined with no name.\n"
-		unless defined $name;
-	return $Vend::Session->{'carts'}->{$name} = [];
+sub TIESCALAR {
+	my $class = shift;
+	my $instance = shift || undef;
+	return bless \$instance => $class;
 }
 
-sub add {
-	my($s, %item) = @_;
-	my $found = -1;
-	my $i;
-	
-	! defined $item{'code'} or $item{'code'} eq ''
-		and croak "Vend::Cart: add empty item?";
+sub FETCH {
+	return scalar ($::Carts->{$Vend::CurrentCart || 'main'} ||= []);
+}
 
-	$item{'quantity'} ||= 1;
-	$item{'quantity'} < 1 and die "Can't order negative number.\n";
-	
-	INC: {
-		last INC if $item{Separate};
-
-		foreach $i (0 .. $#$s) {
-		    if ($s->[$i]->{'code'} eq $item{'code'}) {
-				$found = $i;
-				delete $item{'code'};
-			}
+sub STORE {
+	my ($self, $cart) = @_;
+	my $name;
+	if(ref $cart) {
+		for(keys %$::Carts) {
+			$name = $_ if $::Carts->{$_} eq $cart;
 		}
-
-	}
-
-	if($found == -1) {
-		push @$s, \%item;
+		if (! $name) {
+			$name = 'UNKNOWN';
+			$::Carts->{UNKNOWN} = $cart;
+		}
+		$Vend::CurrentCart = $name;
 	}
 	else {
-		for (keys %item) {
-			($s->[$i]->{$_} = $item{$_}, next)
-				unless $_ eq 'quantity';
-			$s->[$i]->{'quantity'} += $item{$_};
-		}
+		$Vend::CurrentCart = $cart;
 	}
+	return $::Carts->{$Vend::CurrentCart};
 }
 
+sub DESTROY { }
 
-sub set {
-	my($s, $cursor, $keep, %item) = @_;
-	my $found = -1;
-	my $i;
-	
-	CHECK: {
-		last CHECK if $cursor >= 0;
-		die "Vend::Cart -- can't set item without code.\n"
-			unless $item{'code'};
-		foreach $i (0 .. $#$s) {
-		    if ($$s->[$i]->{'code'} eq $item{'code'}) {
-				$cursor = $i;
-			}
-		}
-	}
-
-	return $s->add(%item)
-		unless defined $s->[$cursor];
-	unless ($keep) {
-		die "Vend::Cart -- can't set item without code.\n"
-			unless $item{'code'};
-		$s->[$cursor] = {%item};
-	}
-	else {
-		@{$s->[$cursor]}{keys %item} = values %item;
-	}
-	return $cursor;
-}
-	
 # If the user has put in "0" for any quantity, delete that item
 # from the order list.
 sub toss_cart {
@@ -123,11 +72,11 @@ sub toss_cart {
 	my (@master);
     DELETE: for (;;) {
         foreach $i (0 .. $#$s) {
-            if ($s->[$i]->{'quantity'} == 0) {
-				push (@master, $s->[$i]->{mv_mi})
-					if defined $s->[$i]->{mv_mi} && ! $s->[$i]->{mv_si};
+            if ($s->[$i]->{quantity} <= 0) {
 				next if defined $s->[$i]->{mv_control} and
 								$s->[$i]->{mv_control} =~ /\bnotoss\b/;
+				push (@master, $s->[$i]->{mv_mi})
+					if $s->[$i]->{mv_mi} && ! $s->[$i]->{mv_si};
                 splice(@$s, $i, 1);
                 next DELETE;
             }
@@ -137,35 +86,23 @@ sub toss_cart {
 
 	return 1 unless @master;
 	my $mi;
-	my @save;
-
+	my %save;
+	my @items;
 	# Brute force delete for subitems of any deleted master items
 	foreach $mi (@master) {
         foreach $i (0 .. $#$s) {
-            push(@save, $i)
-				unless $s->[$i]->{'mv_mi'} and $s->[$i]->{'mv_mi'} eq $mi;
+            $save{$i} = 1
+				unless $s->[$i]->{mv_si} and $s->[$i]->{mv_mi} eq $mi;
         }
 	}
-	@$s = @$s[@save];
+	@items = @$s;
+	@{$s} = @items[sort {$a <=> $b} keys %save];
     1;
 }
 
-sub set_cart {
-	my($cart) = @_;
-	defined $cart and defined $Vend::Session->{'carts'}->{$cart}
-	    and return $Vend::Items = $Vend::Session->{'carts'}->{$cart};
-	return $Vend::Items;
-}
-
 sub get_cart {
-	my($cart,@options) = @_;
-	if(defined $cart and defined $Vend::Session->{'carts'}->{$cart}) {
-	    return $Vend::Session->{'carts'}->{$cart};
-	}
-	elsif(defined $cart and $cart) {
-		return create $cart;
-	}
-	return $Vend::Items;
+	my($cart) = shift or return $Vend::Items;
+	return $Vend::Items = $cart;
 }
 
 1;

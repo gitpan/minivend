@@ -2,7 +2,7 @@
 #
 # Imagemap.pm -- interpret NCSA imagemap in CGI program
 #
-# $Id: Imagemap.pm,v 1.6 1998/01/31 05:15:40 mike Exp $
+# $Id: Imagemap.pm,v 1.1 1999/11/12 08:46:23 mike Exp $
 #
 # This module adapted from the Perl imagemap program by:
 #
@@ -21,13 +21,7 @@
 # using "point" and "default" in the same map makes no sense.  if "point"
 # is used, the action for the closest one is selected.
 #
-# to use imagemap, in your minivend.cfg file put something like:
-#
-#  ActionMap	actionmap
-#
-# where actionmap is relative to the MiniVend PageDir
-#
-# And define an image submit map on your form
+# To use, define an image submit map on your form
 #
 #   <input type=image name=mv_todo SRC="image_url">
 #   You can pass a "client-side" imagemap like this:
@@ -54,10 +48,9 @@ require Exporter;
 @ISA = qw(Exporter);
 
 @EXPORT = qw(action_map);
-use Carp;
 use strict;
 use vars qw($VERSION);
-$VERSION = substr(q$Revision: 1.6 $, 10);
+$VERSION = substr(q$Revision: 1.1 $, 10);
 
 my $Action = "";
 my $minDistance = -1;
@@ -70,7 +63,7 @@ sub action_map {
   my($matched,$method,$action,$points);
 
   unless(@map) {
-  	carp "No map sent";
+  	::logError("No map sent");
 	return undef;
   }
 
@@ -82,7 +75,7 @@ sub action_map {
   }
   my $query = "$x,$y";
   unless ($query =~ m/\d+,\d+/) {
-	  carp "Wrong arguments; browser may not support ISMAP";
+	  ::logError ("Wrong arguments; browser may not support ISMAP");
 	  return undef;
   }
 
@@ -93,7 +86,7 @@ sub action_map {
 	$points = '' unless defined $points;
     eval("\$matched = &pointIn_${method}('$action','$query','$points');");
     if ($@ ne "") {
-	 	carp "Malformed imagemap: $method unknown";
+	 	::logError("Malformed imagemap: $method unknown");
 		return undef;
 	}
     last if $matched;

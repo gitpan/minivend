@@ -1,6 +1,8 @@
 # Vend/Scan.pm:  Prepare searches for MiniVend
 #
-# $Id: Scan.pm,v 1.27 1998/03/21 12:12:39 mike Exp mike $
+# $Id: Scan.pm,v 1.9 2000/02/07 10:36:36 mike Exp $
+#
+# Copyright 1996-2000 by Michael J. Heins <mikeh@minivend.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,49 +14,27 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+# You should have received a copy of the GNU General Public
+# License along with this program; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+# MA  02111-1307  USA.
 
 package Vend::Scan;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(
-			check_scan_cache
-			check_search_cache
+			create_last_search
+			finish_search
 			find_search_params
 			perform_search
 			);
 
-$VERSION = substr(q$Revision: 1.27 $, 10);
+$VERSION = substr(q$Revision: 1.9 $, 10);
 
 use strict;
 use Vend::Util;
 use Vend::Interpolate;
-use Vend::Data qw(product_code_exists_ref column_exists);
-
-my @Sql = ( qw(
-					mv_searchspec
-					mv_search_file
-					mv_sql_query
-					mv_range_look
-					mv_cache_key
-					mv_matchlimit
-					mv_orsearch
-					mv_list_only
-					mv_range_min
-					mv_range_max
-					mv_range_alpha
-					mv_numeric
-					mv_return_fields
-					mv_coordinate
-					mv_substring_match
-					mv_search_field
-					mv_search_page
-					mv_sort_field
-					mv_sort_option
-
-));
+use Vend::Data qw(product_code_exists_ref column_index);
 
 my @Order = ( qw(
 					mv_dict_look
@@ -62,17 +42,24 @@ my @Order = ( qw(
 					mv_search_file
 					mv_base_directory
 					mv_field_names
+                    mv_field_file
+					mv_verbatim_columns
 					mv_range_look
 					mv_cache_key
 					mv_profile
 					mv_case
 					mv_negate
+					mv_numeric
+                    mv_column_op
+					mv_begin_string
 					mv_coordinate
+					mv_nextpage
 					mv_dict_end
 					mv_dict_fold
 					mv_dict_limit
 					mv_dict_order
 					mv_failpage
+					mv_first_match
 					mv_all_chars
 					mv_return_all
 					mv_exact_match
@@ -80,6 +67,7 @@ my @Order = ( qw(
 					mv_index_delim
 					mv_list_only
 					mv_matchlimit
+                    mv_more_decade
 					mv_min_string
 					mv_max_matches
 					mv_orsearch
@@ -90,72 +78,33 @@ my @Order = ( qw(
 					mv_return_delim
 					mv_return_fields
 					mv_return_file_name
+					mv_return_reference
 					mv_substring_match
 					mv_return_spec
 					mv_spelling_errors
 					mv_search_field
+					mv_search_group
+					mv_search_label
 					mv_search_page
+					mv_search_relate
 					mv_sort_field
 					mv_sort_option
-					mv_sort_command
-					mv_sort_crippled
 					mv_searchtype
+					mv_unique
+					mv_more_matches
+					mv_value
 
 ));
 
-my %Map = ( qw(
-					mv_base_directory	base_directory
-					mv_case				case_sensitive
-					mv_coordinate		coordinate
-					mv_cache_key        cache_key
-					mv_dict_end			dict_end
-					mv_dict_fold		dict_fold
-					mv_dict_look		dict_look
-					mv_dict_limit		dict_limit
-					mv_dict_order		dict_order
-					mv_failpage			error_page
-					mv_exact_match		exact_match
-					mv_field_names      field_names
-					mv_all_chars		all_chars
-					mv_return_all		return_all
-					mv_head_skip		head_skip
-					mv_index_delim		index_delim
-					mv_list_only        list_only
-					mv_matchlimit		match_limit
-					mv_min_string		min_string
-					mv_max_matches		max_matches
-					mv_negate      		negate
-					mv_orsearch			or_search
-					mv_profile			mv_profile
-					mv_range_look		range_look
-					mv_range_min		range_min
-					mv_range_max		range_max
-					mv_range_alpha		range_alpha
-					mv_return_spec		mv_return_spec
-					mv_record_delim		record_delim
-					mv_return_delim		return_delim
-					mv_return_fields	return_fields
-					mv_return_file_name	return_file_name
-					mv_search_field		search_field
-					mv_search_file		search_file
-					mv_search_page		search_page
-					mv_searchtype		search_type
-					mv_sort_field		sort_field
-					mv_sort_option		sort_option
-					mv_sort_command		sort_command
-					mv_sort_crippled	sort_crippled
-					mv_spelling_errors	spelling_errors
-					mv_sql_query     	sql_query
-					mv_searchspec		search_spec
-					mv_substring_match	substring_match
-
-) );
-
 my %Scan = ( qw(
+
                     ac  mv_all_chars
                     bd  mv_base_directory
+                    bs  mv_begin_string
+                    ck  mv_cache_key
                     co  mv_coordinate
                     cs  mv_case
+                    cv  mv_verbatim_columns
                     de  mv_dict_end
                     df  mv_dict_fold
                     di  mv_dict_limit
@@ -165,17 +114,26 @@ my %Scan = ( qw(
                     dr  mv_record_delim
                     em  mv_exact_match
                     er  mv_spelling_errors
+                    ff  mv_field_file
                     fi  mv_search_file
+                    fm  mv_first_match
                     fn  mv_field_names
                     hs  mv_head_skip
-                    id  mv_index_delim
+                    ix  mv_index_delim
+                    lb  mv_search_label
+                    lo  mv_list_only
+                    lr  mv_search_line_return
+                    md  mv_more_decade
                     ml  mv_matchlimit
                     mm  mv_max_matches
-                    sq  mv_sql_query
+                    MM  mv_more_matches
                     mp  mv_profile
                     ms  mv_min_string
                     ne  mv_negate
-					nu  mv_numeric
+                    ng  mv_negate
+                    np  mv_nextpage
+                    nu  mv_numeric
+                    op  mv_column_op
                     os  mv_orsearch
                     ra  mv_return_all
                     rd  mv_return_delim
@@ -184,601 +142,643 @@ my %Scan = ( qw(
                     rl  mv_range_look
                     rm  mv_range_min
                     rn  mv_return_file_name
+                    rr  mv_return_reference
                     rs  mv_return_spec
                     rx  mv_range_max
                     SE  mv_raw_searchspec
                     se  mv_searchspec
                     sf  mv_search_field
+                    sg  mv_search_group
+                    si  mv_search_immediate
                     sp  mv_search_page
+                    sq  mv_sql_query
+                    sr  mv_search_relate
                     st  mv_searchtype
                     su  mv_substring_match
-					tf	mv_sort_field
-					to	mv_sort_option
-					tc	mv_sort_command
-					ty	mv_sort_crippled
+                    td  mv_table_cell
+                    tf  mv_sort_field
+                    th  mv_table_header
+                    to  mv_sort_option
+                    tr  mv_table_row
+                    un  mv_unique
+                    va  mv_value
 
 				) );
 
+my @ScanKeys = keys %Scan;
+my %RevScan;
+%RevScan = reverse %Scan;
+
 my %Parse = (
 
-	case_sensitive		=>	\&_yes_array,
-	negate         		=>	\&_yes_array,
-	coordinate          =>	\&_yes,
-	head_skip           =>	\&_number,
-	match_limit         =>	sub { $_[1] =~ /(\d+)/ ? $1 : 50 },
-	max_matches         =>	sub { $_[1] =~ /(\d+)/ ? $1 : 2000 },
-	min_string          =>	sub { $_[1] =~ /(\d+)/ ? $1 : 1 },
-	dict_limit			=>	\&_dict_limit,
-	exact_match			=>	\&_yes,
-	mv_profile          =>	\&parse_profile,
-	or_search           =>  \&_yes,
-	return_fields       =>	\&_column,
-	range_look	        =>	\&_column,
-	range_min	        =>	\&_array,
-	range_max	        =>	\&_array,
-	range_alpha	        =>	\&_array,
-	search_spec       	=>	\&_scalar_or_array,
-	return_file_name    =>	\&_yes,
-	all_chars		    =>	\&_yes,
-	return_all		    =>	\&_yes,
-	save_context        =>	\&_array,
-	search_field		=>	\&_column,
-	sort_command		=>	\&_command,
-	sort_field			=>	\&_column,
-	sort_option			=>	\&_array,
-	sort_crippled		=>	\&_yes,
-	search_file         => 	\&_scalar_or_array,
-	field_names         =>	\&_array,
-	spelling_errors     => 	sub { my $n = int($_[1]); $n < 8 ? $n : 1; },
-	substring_match		=>	\&_yes_array,
+    mv_search_group         =>  \&_array,
+    mv_search_field         =>  \&_array,
+    mv_all_chars            =>  \&_yes_array,
+    mv_begin_string         =>  \&_yes_array,
+    mv_case                 =>  \&_yes_array,
+    mv_negate               =>  \&_yes_array,
+    mv_numeric              =>  \&_yes_array,
+    mv_orsearch             =>  \&_yes_array,
+    mv_substring_match      =>  \&_yes_array,
+    mv_column_op            =>  \&_array,
+    mv_coordinate           =>  \&_yes,
+
+	mv_field_names          =>	\&_array,
+	mv_spelling_errors      => 	sub { my $n = int($_[1]); $n < 8 ? $n : 1; },
+    mv_dict_limit           =>  \&_dict_limit,
+    mv_exact_match          =>  \&_yes,
+    mv_head_skip            =>  \&_number,
+    mv_matchlimit           =>  sub { $_[1] =~ /(\d+)/ ? $1 : 50 },
+    mv_max_matches          =>  sub { $_[1] =~ /(\d+)/ ? $1 : 2000 },
+    mv_min_string           =>  sub { $_[1] =~ /(\d+)/ ? $1 : 1 },
+    mv_profile              =>  \&parse_profile,
+    mv_range_alpha          =>  \&_array,
+    mv_range_look           =>  \&_array,
+    mv_range_max            =>  \&_array,
+    mv_range_min            =>  \&_array,
+    mv_return_all           =>  \&_yes,
+    mv_return_fields        =>  \&_array,
+    mv_return_file_name     =>  \&_yes,
+    mv_save_context         =>  \&_array,
+    mv_searchspec           =>  \&_verbatim_array,
+    mv_sort_field           =>  \&_array,
+    mv_sort_option          =>  \&_opt,
+    mv_unique               =>  \&_yes,
+    mv_value                =>  \&_value,
+	mv_sql_query			=>  sub {
+								my($ref, $val) = @_;
+								my $p = Vend::Interpolate::escape_scan($val, $ref);
+								find_search_params($ref, $p);
+								return $val;
+							},
+	#base_directory      => 	\&_file_security_scalar,
+	mv_field_file          => 	\&_file_security_scalar,
+	mv_search_file         => 	\&_file_security,
 
 );
 
-sub check_scan_cache {
-	return() unless $Vend::Cfg->{SearchCache};
-	my($path) = @_;
-	check_cache_key( generate_key($path) );
-}
-
-sub check_search_cache {
-	return() unless $Vend::Cfg->{SearchCache};
-	my($ref) = @_;
-	return () unless defined $ref->{mv_cache_params};
-
-	my(@params) = split /[\s,]+/, $ref->{mv_cache_params};
-	for(@params) {
-		$_ .= $ref->{$_};
+sub create_last_search {
+	my ($ref) = @_;
+	my @out;
+	my @val;
+	my ($key, $val);
+	while( ($key, $val) = each %$ref) {
+		next unless defined $RevScan{$key};
+		@val = split /\0/, $val;
+		for(@val) {
+			s!/!__SLASH__!g;
+			s!(\W)!sprintf '%%%02x', ord($1)!eg;
+			s!__SLASH__!::!g;
+			push @out, "$RevScan{$key}=$_";
+		}
 	}
-
-	check_cache_key( generate_key(@params) );
-
-}
-
-sub check_cache_key {
-	my($key) = @_;
-	
-	my $page = readfile ($Vend::Cfg->{ScratchDir}.'/SearchCache/'.$key.'.html');
-
-	return($key,undef) unless defined $page;
-	return(undef,$page);
+	$Vend::Session->{last_search} = join "/", 'scan', @out;
 }
 
 sub find_search_params {
 	my($c,$param) = @_;
-	my(@args) = split "/", $param;
+	my(@args);
+	if(! $param) {
+		$c = \%CGI::values;
+	}
+	else {
+		$param =~ s/__NULL__/\0/g;
+		@args = split m:/:, $param;
+	}
+
 	my($var,$val);
+
 	for(@args) {
 		($var,$val) = split /=/, $_, 2;
-		$val =~ s/%([A-Fa-f0-9][A-Fa-f0-9])/chr(hex($1))/ge;
+		next unless defined $Scan{$var};
 		$val =~ s!::!/!g;
-		if (!$Vend::Cfg->{NewEscape} and $var eq 'dl' || $var eq 'se') {
-			$val =~ s/\.(..)/chr(hex($1))/ge;
-			unless
-			(defined $c->{$Scan{uc $var}})	{ $c->{$Scan{uc $var}} =  $val		}
-			else   							{ $c->{$Scan{uc $var}} .= ".00$val" }
-		}
-		if (defined $Scan{$var}) {
-			unless
-			(defined $c->{$Scan{$var}})	{ $c->{$Scan{$var}} =  $val		}
-			else   						{ $c->{$Scan{$var}} .= "\0$val"	}
-		}
+		$val =~ s/%([A-Fa-f0-9][A-Fa-f0-9])/chr(hex($1))/ge;
+		$c->{$Scan{$var}} = defined $c->{$Scan{$var}}
+							? ($c->{$Scan{$var}} . "\0$val" )
+							: $val;
 	}
-	1;
+#::logDebug("find_search_params: " . ::uneval($c));
+	return $c;
 }
 
 my %Save;
 
+sub parse_map {
+	my($ref,$map) = @_;
+	$map = delete $ref->{mv_search_map} unless $map;
+	use strict;
+	return undef unless defined $map;
+	my($params);
+	if(index($map, "\n") != -1) {
+		$params = $map;
+	}
+    elsif(defined $Vend::Cfg->{SearchProfileName}->{$map}) {
+        $map = $Vend::Cfg->{SearchProfileName}->{$map};
+        $params = $Vend::Cfg->{SearchProfile}->[$map];
+    }
+    elsif($map =~ /^\d+$/) {
+        $params = $Vend::Cfg->{SearchProfile}->[$map];
+    }
+    elsif(defined $::Scratch->{$map}) {
+        $params = $::Scratch->{$map};
+    }
+	
+	return undef unless $params;
+
+	if ( $params =~ m{\[} or $params =~ /__/) {
+		$params = interpolate_html($params);
+	}
+
+	my($ary, $var,$source, $i);
+
+	$params =~ s/^\s+//mg;
+	$params =~ s/\s+$//mg;
+	my(@param) = grep $_, split /[\r\n]+/, $params;
+	for(@param) {
+		($var,$source) = split /[\s=]+/, $_, 2;
+		$ref->{$var} = [] unless defined $ref->{$var};
+		$ref->{$source} = '' if ! defined $ref->{$source};
+		$ref->{$source} =~ s/\0/|/g;
+		push @{$ref->{$var}}, ($ref->{$source});
+	}
+	return 1;
+}
+
+sub parse_profile_ref {
+    my ($ref, $profile) = @_;
+    my ($var, $p);
+    foreach $p (keys %$profile) {
+		next unless
+			$var = $Scan{$p}
+					or
+			(defined $RevScan{$p} and $var = $p);
+		$ref->{$var} = $profile->{$p}, next
+			if ref $profile->{$p} || ! defined $Parse{$var};
+		$ref->{$var} = &{$Parse{$var}}($ref,$profile->{$p});
+    }
+    return;
+}
+
 sub parse_profile {
 	my($ref,$profile) = @_;
 	return undef unless defined $profile;
-    my($codere) = '[\w-_#/.]+';
 	my($params);
-    if(defined $Vend::Cfg->{'SearchProfileName'}->{$profile}) {
-        $profile = $Vend::Cfg->{'SearchProfileName'}->{$profile};
-        $params = $Vend::Cfg->{'SearchProfile'}->[$profile];
+    if(defined $Vend::Cfg->{SearchProfileName}->{$profile}) {
+        $profile = $Vend::Cfg->{SearchProfileName}->{$profile};
+        $params = $Vend::Cfg->{SearchProfile}->[$profile];
     }
     elsif($profile =~ /^\d+$/) {
-        $params = $Vend::Cfg->{'SearchProfile'}->[$profile];
+        $params = $Vend::Cfg->{SearchProfile}->[$profile];
     }
-    elsif(defined $Vend::Session->{scratch}->{$profile}) {
-        $params = $Vend::Session->{scratch}->{$profile};
+    elsif(defined $::Scratch->{$profile}) {
+        $params = $::Scratch->{$profile};
     }
-    else { return undef }
-
+	
 	return undef unless $params;
 
-	$params = interpolate_html($params)
-		if index($params, '[') != -1;
+	if ( index($params, '[') != -1 or index($params, '__') != -1) {
+		$params = interpolate_html($params);
+	}
 
 	my($p, $var,$val);
 	my $status = $profile;
 	undef %Save;
-	my(@param) = split /[\r\n]+/, $params;
+	$params =~ s/^\s+//mg;
+	$params =~ s/\s+$//mg;
+	my(@param) = grep $_, split /[\r\n]+/, $params;
 	for(@param) {
-		next unless /\S/;
-		s/^\s+//;
-		s/\s+$//;
-		($p,$val) = split /[\s=]+/, $_, 2;
-		$status = -1 if $p eq 'mv_last';
-		next unless defined $Map{$p};
-		$var = $Map{$p};
+		($var,$val) = split /[\s=]+/, $_, 2;
+		$status = -1 if $var eq 'mv_last';
+		next unless defined $RevScan{$var} or $var = $Scan{$var};
 		$val =~ s/&#(\d+);/chr($1)/ge;
 		$Save{$p} = $val;
-		$val = &{$Parse{$var}}($ref,$val)
+		$val = &{$Parse{$var}}($ref,$val,$ref->{$var} || undef)
 				if defined $Parse{$var};
 		$ref->{$var} = $val if defined $val;
 	}
+
 	return $status;
 }
 
-sub do_more {
-	my($c,$opt,$more) = @_;
-	my($session,$next,$last,$chunk,$mod) = split(/:/,$more);
-	$opt->{'match_limit'} = $chunk;
-	my $q = new Vend::Search %{$opt};
-	my $out = $q->more_matches($session,$next,$last,$mod);
-	finish_up($c,$q,$out) or return 0;
-   	return($q,$out);
-}
-
-sub sql_search {
-	my($c,$options,$second) = @_;
-	my ($out, $table, @fields);
-	my ($i, $op, @out);
-	my (@range);
-	my (@range_min);
-	my (@range_max);
-	my (@range_alpha);
-	my ($numeric,$substring);
-
-	unless(defined $second) {
-		for( @Sql ) {
-			$options->{$Map{$_}} = $c->{$_}
-				if defined $c->{$_};
-		}
-	}
-	else {
-		for( @Sql ) {
-			$options->{$Map{$_}} = $Save{$_};
-		}
-	}
-
-	my @specs = split /\000/, $options->{search_spec};
-
-    if (defined $options->{'search_page'} or $options->{session_key}) {
-		$options->{'save_context'} = [	'session_key', 'search_page',
-										'search_spec', 'dict_look' ];
-	}
-
-	$substring = _yes_array('', $options->{substring_match});
-	$substring = [$substring] unless ref $substring;
-
-	$numeric = _yes_array('', $options->{numeric});
-	$numeric = [$numeric] unless ref $numeric;
-
-	my(@tables) = split /[\s,\000]+/, ($options->{search_file} || 'products');
-
-	my $db = Vend::Data::database_exists_ref($tables[0])
-				or do {
-					logError("non-existent database '$tables[0]'");
-					return undef;
-				};
-	$db = $db->ref();
-
-FORMULATE: {
-	# See if we have the simple query. If sql_query is set,
-	# then we will just do it by skipping the rest
-	# of the parse. If fi=table is not set, we
-	# will use 'products' and hope for the best.
-	# 
-	# We substitute search specs for ? if appropriate.
-	#
-
-	if($options->{return_fields}) {
-		$options->{return_fields} =~ s/[\0,\s]+/,/g;
-	}
-	else {
-		$options->{return_fields} = $db->[1];
-	}
-
-	if($options->{sort_field}) {
-		$options->{sort_field} =~ s/[\0,\s]+$//;
-		$options->{sort_field} =~ s/[\0,\s]+desc\b/\001DESC/ig;
-		$options->{sort_field} =~ s/[\0,\s]+asc\b/\001ASC/ig;
-		$options->{sort_field} =~ s/[\0,\s]+/,/g;
-		$options->{sort_field} =~ tr/\001/ /;
-	}
-
-	my $joiner = ' AND ';
-
-	$joiner = ' OR ' if _yes($options->{or_search});
-
-	if($options->{sql_query}) {
-		$options->{sql_query} =~ s/\0+$//g;
-		$options->{sql_query} =~ s/[\0\s]*(where|order\s+by)[\s\0]+/ $1 /ig;
-		$options->{sql_query} =~ s/\bfrom\s+%t/'FROM ' . join(", ", @tables)/ei;
-		$options->{sql_query} =~ s/[\0\s]+order\s+by\s+%f\b/
-			$options->{sort_field}
-				?  " ORDER BY $options->{sort_field}"
-				: ''/ie;
-		$options->{sql_query} =~ s/(select(\s+distinct)?)\s+%f\b/$1 $options->{return_fields}/i;
-		$options->{sql_query} =~ s/order\s+by[\s\0]*$//ig;
-		$options->{sql_query} =~ s/where[\s\0]*$//ig;
-		$options->{sql_query} =~ s/\0+\s*([!=<>][=<>]?|like)\s*\0+$/ $1 /ig;
-		$options->{sql_query} =~ s/\0+\s*([!=<>][=<>]?|like)\s*$//i;
-		$options->{sql_query} =~ s/\0+/$joiner/g;
-		$options->{sql_query} =~ s/(\s)\?([\s]|$)/%s/;
-# DEBUG
-#Vend::Util::logDebug
-#("mv_sql_query: $options->{sql_query} specs: '" . join("','" @specs) . "'\n")
-#	if ::debug(0x10);
-# END DEBUG
-		my $cfg = {PERL => 1, BOTH => 1};
-		$out = $db->array_query(
-					$options->{sql_query},$tables[0], $cfg, @specs
-				) or return 0;
-		last FORMULATE;
-	}
-	elsif($options->{range_look}) {
-		@range			= split /[,\000]/, $options->{range_look};
-		@range_min		= split /[,\000]/, $options->{range_min};
-		@range_max		= split /[,\000]/, $options->{range_max};
-		@range_alpha	= split /[,\000]/, $options->{range_alpha};
-	}
-
-
-	if($options->{return_fields} eq '*') {
-		$options->{field_names} = $db->columns();
-	}
-	$options->{return_fields} =~ s/\b0\b/code/;
-
-	if ($options->{search_field}) {
-		@fields = split /[\0,\s]+/, $options->{search_field};
-	}
-	else {
-		@fields = $db->columns();
-	}
-
-	my $query = "select $options->{return_fields} from ";
-	$query .= join ",", @tables;
-
-
-	$query .= " where ";
-
-	my ($range,$val,$spec,$qb,$qe,@query);
-
-	my $coord = scalar @specs <=> scalar @fields;
-
-	if(! @specs) {
-		# do nothing here
-	}
-	elsif($coord == 0) {
-		$i = 0;
-		for (@specs) {
-			$op = '=';
-			$qb = $qe = "";
-			if( $substring->[$i] and ! $db->numeric($fields[$i]) ) {
-					$op  = 'like';
-					$qb = $qe = "%";
-			}
-			if(! $db->numeric($fields[$i]) ) {
-# DEBUG
-#Vend::Util::logDebug
-#("quoting field $i=$specs[$i]\n")
-#	if ::debug(0x10);
-# END DEBUG
-				$specs[$i] = $db->quote("$qb$specs[$i]$qe");
-# DEBUG
-#Vend::Util::logDebug
-#("quoted field $i=$specs[$i]\n")
-#	if ::debug(0x10);
-# END DEBUG
-			}
-
-			push(@query, "$fields[$i] $op $specs[$i]");
-			$i++;
-		}
-	}
-	elsif ($coord == -1) {
-		$joiner = ' OR ';
-		$i = 0;
-		my $spec;
-		$op = '=';
-		$qb = $qe = "";
-		if( $substring->[$i] and ! $db->numeric($fields[$i]) ) {
-				$op  = 'like';
-				$qb = $qe = "%";
-		}
-		if(! $db->numeric($fields[$i]) ) {
-			$specs[$i] = $db->quote("$qb$specs[$i]$qe");
-		}
-		for(@fields) {
-			push(@query, "$fields[$i] $op $specs[0]");
-			$i++;
-		}
-	}
-	else {
-		$joiner = ' OR ';
-		$i = 0;
-		if( $substring->[$i] and ! $db->numeric($fields[0]) ) {
-				$op  = 'like';
-				$qb = $qe = "%";
-		}
-		for(@specs) {
-			$op = '=';
-			$qb = $qe = "";
-			if( $substring->[$i] and ! $db->numeric($fields[0]) ) {
-					$op  = 'like';
-					$qb = $qe = "%";
-			}
-			if(! $db->numeric($fields[0]) ) {
-				$specs[$i] = $db->quote("$qb$specs[$i]$qe");
-			}
-			push(@query, "$fields[0] $op $specs[$i]");
-			$i++;
-		}
-	}
-
-
-
-	$query .= join ($joiner, @query) if @query;
-
-	$joiner = ' AND ' unless _yes($options->{or_search});
-
-	@query = ();
-
-	$i = 0;
-	foreach $range (@range) {
-		if(length $range_min[$i]) {
-			$op = '>=';
-			$range_min[$i] = $db->quote($range_min[$i]) if $range_alpha[$i];
-			push @query, "$range $op $range_min[$i]";
-		}
-		if(length $range_max[$i]) {
-			$op = '<=';
-			$range_max[$i] = $db->quote($range_max[$i]) if $range_alpha[$i];
-			push @query, "$range $op $range_max[$i]";
-		}
-		$i++;
-	}
-
-	if(@query) {
-		$query .= ' AND ' unless $query =~ /where\s+$/i;
-		$query .= join ' AND ', @query;
-	}
-
-	$query .= '1 = 1 ' if $query =~ /where\s+$/i;
-
-	if ($options->{sort_field}) {
-		$query .= " ORDER by $options->{sort_field}";
-		if($options->{sort_option} =~ /r/i) {
-			$query .= ' DESC';
-		}
-	}
-
-# DEBUG
-#Vend::Util::logDebug
-#("complex query: $query\n")
-#	if ::debug(0x10);
-# END DEBUG
-	$out = $db->array_query ($query,$tables[0])
-			or return 0;
-
-  } # last FORMULATE
-
-	for(@$out) {
-		push @out, join "\t", @{$_};
-	}
-	my $q = new Vend::Search %{$options};
-	my $matches = $q->{'global'}->{matches} = scalar @$out;
-	$q->specs(@specs);
-# DEBUG
-#Vend::Util::logDebug
-#("matches: $matches\n@out\n")
-#	if ::debug(0x10);
-# END DEBUG
-	if($matches > $q->{global}->{match_limit}) {
-		$q->save_more(\@out);
-		$matches = $q->{global}->{match_limit};
-		$#out = $matches - 1;
-	}
-
-	finish_up($c,$q,\@out) or return 0;
-	return($q,\@out);
-}
-
-sub finish_up {
-	my($c,$q,$out) = @_;
-	my($v) = $Vend::Session->{'values'};
-
-	my $matches = $q->{global}->{matches};
-	$v->{'mv_search_match_count'}	= $matches;
-	$v->{'mv_searchspec'}			= $c->{'mv_searchspec'} 
-						  			|| $c->{'mv_dict_look'};
-	$v->{'mv_raw_searchspec'}		= $c->{'mv_raw_searchspec'};
-	$v->{'mv_raw_dict_look'}		= $c->{'mv_raw_dict_look'};
-	$v->{'mv_dict_look'}			= $c->{'mv_dict_look'}
-									|| $q->{global}->{dict_look} || '';
-
-	my $msg;
-	if ( $matches > 0 ) {
-		if (defined $Vend::Cfg->{'CollectData'}->{'matched'}) {
-			$msg = join " ",
-						"search matched $matches: ",
-						$q->specs(),
-						$q->{global}->{dict_look};
-			logData($Vend::Cfg->{'LogFile'}, format_log_msg($msg));
-		}
-	}
-	elsif (defined $matches and $matches == 0) {
-		$msg = join " ",
-						$q->specs(),
-						$q->{global}->{dict_look};
-		if (defined $Vend::Cfg->{'CollectData'}->{'nomatch'}) {
-			logData($Vend::Cfg->{'LogFile'}, format_log_msg('no match: ' . $msg));
-		}
-	}
-	else {
-		# Got an error handled by search module
-		return 0;
-	}
-
-	if($Vend::Cfg->{'Delimiter'} eq 'CSV') {
-		for(@$out) { s/^"//; s/[",|].*$//; }
-	}
-
-	undef $v->{'mv_search_over_msg'}
-    			 unless $q->global('overflow');
-
-	return 1;
+sub finish_search {
+    my($q) = @_;
+#::logDebug("finishing up search spec=" . ::uneval($q));
+    my $matches = $q->{'matches'};
+    $::Values->{mv_search_match_count}    = $matches;
+	delete $::Values->{mv_search_error};
+	$::Values->{mv_search_error} = $q->{mv_search_error}
+		if $q->{mv_search_error};
+    $::Values->{mv_matchlimit}     = $q->{mv_matchlimit};
+    $::Values->{mv_first_match}    = $q->{mv_first_match}
+			if defined $q->{mv_first_match};
+    $::Values->{mv_searchspec} 	   = $q->{mv_searchspec};
+    $::Values->{mv_raw_searchspec} = $q->{mv_raw_searchspec} || undef;
+    $::Values->{mv_raw_dict_look}  = $q->{mv_raw_dict_look}  || undef;
+    $::Values->{mv_dict_look}      = $q->{mv_dict_look} || undef;
 }
 
 # Search for an item with glimpse or text engine
 sub perform_search {
-	my($c,$more_matches) = @_;
+    my($c,$more_matches,$pre_made) = @_;
 
-	my($v) = $Vend::Session->{'values'};
+	if (!$c) {
+		return undef unless $Vend::Session->{search_params};
+		($c, $more_matches) = @{$Vend::Session->{search_params}};
+		unless($c->{mv_cache_key}) {
+			Vend::Scan::create_last_search($c);
+			$c->{mv_cache_key} = generate_key($Vend::Session->{last_search});
+		}
+	}
+	elsif ($c->{mv_search_immediate}) {
+        unless($c->{mv_cache_key}) {
+            undef $c->{mv_search_immediate};
+            Vend::Scan::create_last_search($c);
+            $c->{mv_cache_key} = generate_key($Vend::Session->{last_search});
+        }
+	}
+
+	my($v) = $::Values;
     my($param);
 	my(@fields);
 	my(@specs);
 	my($out);
 	my ($p, $q, $matches);
 
-	my %options = (
-			session_key => $c->{mv_cache_key} || '',
-			session_id => $Vend::SessionID,
-			search_mod => ++$Vend::Session->{pageCount},
-			);
-
-	if(defined %Vend::Cache) {
-		$options{'save_hash'} = \%Vend::Cache;
-	}
-	else {
-		$options{'save_dir'} = $Vend::Cfg->{'ScratchDir'};
+	my %options;
+	$options{mv_session_id} = $c->{mv_session_id} || $Vend::SessionID;
+	if($c->{mv_more_matches}) {
+		@options{qw/mv_cache_key mv_next_pointer mv_last_pointer mv_matchlimit/}
+			= split /:/, $c->{mv_more_matches};
+		my $s = new Vend::Search %options;
+		$q = $s->more_matches();
+		finish_search($q);
+		return $q;
 	}
 
-	if (defined $more_matches and $more_matches) {
-		return search_page( do_more($c, \%options, $more_matches) );
-	}
-	elsif (defined $c->{mv_searchtype} and $c->{mv_searchtype} eq 'sql') {
-		return search_page( sql_search($c, \%options) );
-	}
 
 	# A text or glimpse search from here
 
-	foreach $param (@Order) {
-		next unless defined ($c->{$param});
-		$p = $Map{$param};
-		$options{$p} = $c->{$param};
-		$options{$p} =
-			&{$Parse{$p}}(\%options, $options{$p})
-				if defined $Parse{$p};
-		last if $options{$p} eq '-1' and $p eq 'mv_profile';
-		delete $options{$p} unless defined $options{$p};
+	parse_map($c) if defined $c->{mv_search_map};
+
+	if(defined $c->{mv_sql_query}) {
+		my $params = Vend::Interpolate::escape_scan(delete $c->{mv_sql_query}, $c);
+		find_search_params($c, $params);
 	}
 
-	if ( ($options{search_type} || '') eq 'sql') {
-		return search_page( sql_search($c, \%options, 'second_pass') );
+	if($pre_made) {
+		parse_profile_ref(\%options,$c);
 	}
-
-	unless(defined $options{'search_file'}) {
-		if ($Vend::Cfg->{'Delimiter'} eq 'CSV') {
-			$options{'index_delim'} = ',';
+	else {
+		foreach $p ( grep defined $c->{$_}, @ScanKeys) {
+			$c->{$Scan{$p}} = $c->{$p}
+				if ! defined $c->{$Scan{$p}};
 		}
-		elsif ($Vend::Cfg->{'Delimiter'} ne "\t") {
-			$options{'index_delim'} = $Vend::Cfg->{'Delimiter'};
-			$options{'return_delim'} = "\t"
-				unless defined $options{return_delim};
+		foreach $p ( grep defined $c->{$_}, @Order) {
+#::logDebug("Parsing $p");
+			if(defined $Parse{$p}) {
+				$options{$p} = &{$Parse{$p}}(\%options, $c->{$p})
+			}
+			else {
+				$options{$p} = $c->{$p};
+			}
+			last if $options{$p} eq '-1' and $p eq 'mv_profile';
 		}
 	}
 
-    if (defined $options{'search_page'} or $options{session_key}) {
-		$options{'save_context'} = [	'session_key', 'search_page',
-										'search_spec', 'dict_look' ];
+#::logDebug("Cache key: $options{mv_cache_key}");
+	if(! $options{mv_cache_key}) {
+		$options{mv_cache_key} = $c->{mv_search_label} ||
+								 generate_key(
+									@{$options{mv_searchspec}},
+									@{$options{mv_search_field}},
+									@{$options{mv_search_file}},
+								);
+#::logDebug("generated cache key: $options{mv_cache_key}");
 	}
 
- 	$options{'search_type'} = 'text'
-		unless ($Vend::Cfg->{'Glimpse'});
+#::logDebug("Options after parse: " . ::uneval(\%options));
+
+# GLIMPSE
+ 	if (defined $options{mv_searchtype} && $options{mv_searchtype} eq 'glimpse') {
+		undef $options{mv_searchtype} if ! $Vend::Cfg->{Glimpse};
+	}
+# END GLIMPSE
 
   SEARCH: {
 
-		$options{'search_spec'} = $options{'dict_look'} 
-			unless defined $options{'search_spec'};
-
-		if(ref $options{'search_spec'}) {
-			@specs = @{$options{'search_spec'}};
-			delete $options{'search_spec'};
-		}
+		$options{mv_return_all} = 1
+			if $options{mv_dict_look} and ! $options{mv_searchspec};
 	
-		if (defined $options{search_type} and $options{search_type} eq 'glimpse'){
-			 		$q = new Vend::Glimpse %options;
+		if (defined $pre_made) {
+			$q = $pre_made;
+			@{$q}{keys %options} = (values %options);
 		}
-		else	{ 	$q = new Vend::TextSearch %options }
-
-		@specs = ($options{'search_spec'}) 
-			unless defined @specs;
+		elsif (! defined $options{mv_searchtype} or $options{mv_searchtype} eq 'text') {
+			$q = new Vend::TextSearch %options;
+		}
+		elsif ( $options{mv_searchtype} =~ /db|sql/i){
+			$q = new Vend::DbSearch %options;
+#::logDebug("Glimpsesearch object: " . ::uneval($q));
+		}
+# GLIMPSE
+		elsif ( $options{mv_searchtype} eq 'glimpse'){
+			$q = new Vend::Glimpse %options;
+		}
+# END GLIMPSE
+		else  {
+			eval {
+				no strict 'refs';
+				$q = "$Global::Variable->{$options{mv_searchtype}}"->new(%options);
+			};
+			if ($@) {
+				::display_special_page(
+					find_special_page('badsearch'),
+					errmsg("Bad search type %s: %s", $options{mv_searchtype}, $@ ),
+					);
+				return 0;
+			}
+		}
 
 		if(defined $options{mv_return_spec}) {
-			$q->global('matches', 1) 
-				if product_code_exists_ref($specs[0]);
-			$out = [$specs[0]];
+			$q->{matches} = scalar @{$q->{mv_searchspec}};
+			$q->{mv_results} = [ map { [ $_ ] } @{$q->{mv_searchspec}} ];
 			last SEARCH;
 		}
 
-		delete $options{'search_type'};
-
-		$q->fields(@{$options{'search_field'}}) 
-			if defined $options{'search_field'} ;
-		$q->specs(@specs);
-
+#::logDebug(::uneval($q));
 		$out = $q->search();
   } # last SEARCH
 
-	if($q->{global}->{list_only}) {
-		return $out;
+	if($q->{mv_list_only}) {
+		return $q->{mv_results};
 	}
 
-	finish_up($c,$q,$out) or return 0;
+	finish_search($q);
 
-	search_page($q,$out);
+	return $q;
 
 }
 
-sub _column {
-	return '' unless $_[1];
-	my @fields = split /\s*[,\0]\s*/, $_[1];
+BEGIN {
+	eval { require SQL::Statement; };
+}
+
+my %scalar = (qw/ st 1 ra 1 co 1 os 1/);
+
+sub push_spec {
+	my ($parm, $val, $ary, $hash) = @_;
+	push(@$ary, "$parm=$val"), return
+		if $ary;
+	$hash->{$parm} = $val, return
+		if $scalar{$parm};
+	$hash->{$parm} = []
+		if ! defined $hash->{$parm};
+	push @{$hash->{$parm}}, $val;
+	return;
+}
+
+sub sql_statement {
+	my($text, $ref, $table) = @_;
+#::logDebug("sql_statement input=$text");
+	my $ary;
+	my $hash;
+
+	if(wantarray) {
+		$hash = {};
+		$ary = '';
+	}
+	else {
+		$ary = [];
+		$hash = '';
+	}
+
+	if ($table) {
+		push_spec('fi', $table, $ary, $hash)
+# GLIMPSE
+			unless "\L$table" eq 'glimpse';
+# END GLIMPSE
+	}
+
+	die "SQL is not enabled for MiniVend. Get the SQL::Statement module.\n"
+		unless $INC{'SQL/Statement.pm'};
+
+	my $parser = SQL::Parser->new('Ansi');
+
+	# Strip possible leading stuff
+	$text =~ s/^\s*sq\s*=//;
+	my $stmt;
+	eval {
+		$stmt = SQL::Statement->new($text, $parser);
+	};
+	if($@ and $text =~ s/^\s*sq\s*=(.*)//m) {
+#::logDebug("failed first query, error=$@");
+		my $query = $1;
+		push @$ary, $text if $ary;
+		eval {
+			$stmt = SQL::Statement->new($query, $parser);
+		};
+	}
+	if($@) {
+		::logError("Bad SQL statement: $@\nQuery was: $text.\n");
+		return "se=BAD_SQL";
+	}
+
+	my $nuhash;
+	my $codename;
+
+	my $update = $stmt->command();
+	undef $update if $update eq 'SELECT';
+#	CODECHECK: {
+#		last CODECHECK if ! $update;
+#		my $i = 0;
+#		for($stmt->columns()) {
+#			($stmt->{MV_VALUE_RELOCATE} = $i, last)
+#				if $_ eq $codename || $_ eq '0';
+#			$i++;
+#		}
+#	}
+
+	for($stmt->tables()) {
+		my $t = $_->name();
+
+		my $codename;
+		my $db = Vend::Data::database_exists_ref($t);
+		if($db) {
+			$codename = $db->config('KEY') || 'code';
+			$nuhash = $db->config('NUMERIC') || undef;
+			push_spec( 'fi', $Vend::Cfg->{Database}{$t}{'file'}, $ary, $hash);
+		}
+# GLIMPSE
+		elsif ("\L$t" eq 'glimpse') {
+			$codename = 'code';
+			undef $nuhash;
+			push_spec('st', 'glimpse', $ary, $hash);
+		}
+# END GLIMPSE
+		else {
+			push_spec('fi', $t, $ary, $hash);
+		}
+#::logDebug("t=$t obj=$_ db=$db nuhash=" . ::uneval($nuhash));
+	}
+
+	$text =~ /\bselect\s+distinct\s+/i and push_spec( 'un', 'yes', $ary, $hash);
+
+	for($stmt->columns()) {
+		my $name = $_->name();
+		#($stmt->{MV_VALUE_RELOCATE} = 0, last) if $name eq '*';
+		push_spec('rf', $name, $ary, $hash);
+		last if $name eq '*';
+#::logDebug("column name=" . $_->name() . " table=" . $_->table());
+	}
+#	if(! $update) {
+#		# do nothing
+#	}
+#	elsif ($stmt->{mv_value_relocate}) {
+#		splice(@{$hash->{rf}}, $stmt->{mv_value_relocate}, 1);
+#	}
+#	elsif ($update eq 'insert') {
+#		$stmt->{mv_value_relocate} = 0 if ! $stmt->columns();
+#	}
+#
+	my @order;
+
+	@order = $stmt->order();
+	for(@order) {
+		my $c = $_->column();
+		push_spec('tf', $c, $ary, $hash);
+		my $d = $_->desc() ? 'fr' : 'f';
+		push_spec('to', $d, $ary, $hash);
+	}
+
+	my $where;
+	my @where;
+	my $numeric;
+	@where = $stmt->where();
+	if(defined $where[0]) {
+	  my $or;
+	  push_spec('co', 'yes', $ary, $hash);
+	  do {
+	  	my $where = shift @where;
+		my $op = $where->op();
+		my $col = $where->arg1();
+		my $spec = $where->arg2();
+#::logDebug("where=$where op=$op arg1=$col arg2=$spec");
+		OP: {
+			if($op eq 'OR') {
+				push_spec( 'os', 'yes', $ary, $hash)     unless $or++;
+				push(@where, $where->arg1() , $where->arg2());
+			}
+			elsif($op eq 'AND') {
+				push(@where, $where->arg1() , $where->arg2());
+			}
+			else {
+
+				my ($col, $spec);
+
+				# Search spec is a variable if a ref
+				$spec = $where->arg2();
+				$spec = $ref->{$spec->name()}		if ref $spec;
+
+				# Column name is a variable if a string
+				$col = $where->arg1();
+				$col = ref $col ? $col->name() : $::Values->{$col};
+
+				$numeric = (defined $nuhash)
+							? (exists $nuhash->{$col})
+							: (
+								$spec !~ /[^\d.]/		and
+								($spec =~ tr/././) < 2	and
+								$spec !~ /^0\d/				 );
+#::logDebug("numeric for $col=$numeric");
+				push_spec  ('nu', $numeric, $ary, $hash); 
+
+#::logDebug("where col=$col spec=$spec");
+				# If both are not supplied, we ignore it
+				last OP unless defined $col and $spec;
+
+				push_spec('se', $spec, $ary, $hash);
+				push_spec('op', $op, $ary, $hash);
+				push_spec('sf', $col, $ary, $hash);
+				push_spec('ne', ($where->neg() || 0), $ary, $hash) ;
+
+				
+			}
+		}
+	  } while @where;
+
+	}
+	else {
+		push_spec('ra', 'yes', $ary, $hash);
+	}
+	
+#::logDebug("sql_statement output=" . Vend::Util::uneval($hash)) if $hash;
+	return ($hash, $stmt) if $hash;
+
+	my $string = join "\n", @$ary;
+#::logDebug("sql_statement output=$string");
+	return $string;
+}
+
+sub _value {
+	my($ref, $in) = @_;
+	return unless $in;
+	my (@in) = split /\0/, $in;
+	for(@in) {
+		my($var,$val) = split /=/, $_, 2;
+		$::Values->{$var} = $val;
+	}
+	return;
+}
+
+sub _opt {
+	return ($_[2] || []) unless $_[1];
+	my @fields = grep $_, split /\s*[,\0]\s*/, $_[1];
+	unshift(@fields, @{$_[2]}) if $_[2];
 	my $col;
 	for(@fields) {
+		$_ = 'none' unless $_;
+	}
+	\@fields;
+}
+
+sub _column_opt {
+	return ($_[2] || []) unless length($_[1]);
+	my @fields = grep /\S/, split /\s*[,\0]\s*/, $_[1];
+	unshift(@fields, @{$_[2]}) if $_[2];
+	my $col;
+	for(@fields) {
+		s/:.*//;
 		next if /^\d+$/;
-		if (! defined $_[0]->{search_file} and defined ($col = column_exists($_)) ) {
+		if (! $_[0]->{mv_search_file} and defined ($col = column_index($_)) ) {
 			$_ = $col + 1;
 		}
 		elsif ( $col = _find_field($_[0], $_) or defined $col ) {
 			$_ = $col;
 		}
 		else {
-			logError("Bad search column '$_'");
-			return undef;
+			::logError( "Bad search column '%s=$col'" , $_ );
+		}
+	}
+	\@fields;
+}
+
+sub _column {
+	return ($_[2] || []) unless length $_[1];
+	my @fields = split /\s*[,\0]\s*/, $_[1];
+	unshift(@fields, @{$_[2]}) if $_[2];
+	my $col;
+	for(@fields) {
+		next if /^\d+$/;
+		next if $_[0]->{mv_verbatim_columns};
+		next if /:/;
+		if (! defined $_[0]->{mv_search_file} and defined ($col = column_index($_)) ) {
+			$_ = $col + 1;
+		}
+		elsif ( $col = _find_field($_[0], $_) or defined $col ) {
+			$_ = $col;
+		}
+		else {
+			logError( "Bad search column '%s'" , $_ );
 		}
 	}
 	\@fields;
@@ -788,30 +788,33 @@ sub _find_field {
 	my($s, $field) = @_;
 	my ($file, $i, $line, @fields);
 
-	if($s->{field_names}) {
-		@fields = @{$s->{field_names}};
+	if($s->{mv_field_names}) {
+		@fields = @{$s->{mv_field_names}};
 	}
-	elsif(! defined $s->{search_file}) {
+	elsif(! defined $s->{mv_search_file}) {
 		return undef;
 	}
-	elsif(ref $s->{search_file}) {
-		$file = $s->{search_file}->[0];
+	elsif(ref $s->{mv_search_file}) {
+		$file = $s->{mv_search_file}->[0];
 	}
-	elsif($s->{search_file}) {
-		$file = $s->{search_file};
+	elsif($s->{mv_search_file}) {
+		$file = $s->{mv_search_file};
 	}
 	else {
 		return undef;
 	}
 
 	if(defined $file) {
-		my $dir = $s->{base_directory} || $Vend::Cfg->{ProductDir};
+		my $dir = $s->{mv_base_directory} || $Vend::Cfg->{ProductDir};
 		open (Vend::Scan::FIELDS, "$dir/$file")
 			or return undef;
 		chomp($line = <Vend::Scan::FIELDS>);
-		@fields = split /$Vend::Cfg->{Delimiter}/, $line;
+		my $delim;
+		$line = /([^-\w])/;
+		$delim = quotemeta $1;
+		@fields = split /$delim/, $line;
 		close(Vend::Scan::FIELDS);
-		$s->{field_names} = \@fields;
+		$s->{mv_field_names} = \@fields;
 	}
 	$i = 0;
 	for(@fields) {
@@ -827,9 +830,21 @@ sub _command {
 	return $_[1];
 }
 
+sub _verbatim_array {
+	return ($_[2] || undef) unless defined $_[1];
+	my @fields;
+#::logDebug("receiving verbatim_array: " . ::uneval (\@_));
+	@fields = ref $_[1] ? @{$_[1]} : split /\0/, $_[1], -1;
+	unshift(@fields, @{$_[2]}) if $_[2];
+	return \@fields;
+}
+
 sub _array {
-	return undef unless defined $_[1];
-	[split /\s*[,\0]\s*/, $_[1]]
+	return ($_[2] || undef) unless defined $_[1];
+	my @fields;
+	@fields = ref $_[1] ? @{$_[1]} : split /\s*[,\0]\s*/, $_[1], -1;
+	unshift(@fields, @{$_[2]}) if $_[2];
+	return \@fields;
 }
 
 sub _yes {
@@ -844,22 +859,63 @@ sub _scalar {
 	defined $_[1] ? $_[1] : '';
 }
 
+my $Pat = ($^O =~ /win32/i) ? '([A-Za-z]:)?[\\/]' : '/';
+
+sub _file_security {
+    my ($junk, $param, $passed) = @_;
+    $passed = [] unless $passed;
+    my(@files) = grep /\S/, split /\s*[,\0]\s*/, $param, -1;
+    for(@files) {
+        my $ok = (m:^$Pat:o || /\.\./) ? 0 : 1;
+        if(!$ok) {
+            $ok = 1 if $_ eq $::Variable->{MV_SEARCH_FILE};
+            $ok = 1 if $::Scratch->{$_};
+        }
+		if($_ !~ /\./) {
+			$_ = $Vend::Cfg->{Database}{$_}{'file'}
+				if defined $Vend::Cfg->{Database}{$_}{'file'};
+		}
+		$ok &&= $_ !~ /$Vend::Cfg->{NoSearch}/
+			if $Vend::Cfg->{NoSearch};
+        push @$passed, $_ if $ok;
+    }
+    return $passed if @$passed;
+	return [];
+}
+
+sub _file_security_scalar {
+    my $result = _file_security(@_);
+	return $result->[0];
+}
+
 sub _scalar_or_array {
 	my(@fields) = split /\s*[,\0]\s*/, $_[1], -1;
-	scalar @fields > 1 ? [@fields] : (defined $fields[0] ? $fields[0] : '');
+	my $arg;
+	if($arg = $_[2]) {
+		$arg = [ $arg ] unless ref $arg;
+		unshift(@fields, @{$arg});
+	}
+	scalar @fields > 1 ? \@fields : (defined $fields[0] ? $fields[0] : '');
 }
 
 sub _yes_array {
+#::logDebug("_yes_array input=" . ::uneval(\@_));
 	my(@fields) = split /\s*[,\0]\s*/, $_[1];
-	return $#fields ? [map {_yes('',$_)} @fields] : _yes('',$fields[0]);
+	if(defined $_[2]) {
+		unshift(@fields, ref $_[2] ? @{$_[2]} : $_[2]);
+	}
+	map { $_ = _yes('',$_) } @fields;
+#::logDebug("_yes_array fields=" . ::uneval(\@fields));
+	return \@fields;
 }
 
 sub _dict_limit {
 	my ($ref,$limit) = @_;
-	return undef unless	defined $ref->{dict_look};
-    $ref->{'dict_end'} = $ref->{'dict_look'};
-    substr($ref->{'dict_end'},$limit,1) =~ s/(.)/chr(ord($1) + 1)/e;
-	1;
+	return undef unless	defined $ref->{mv_dict_look};
+	$limit = -1 if $limit =~ /^[^-0-9]/;
+    $ref->{mv_dict_end} = $ref->{mv_dict_look};
+    substr($ref->{mv_dict_end},$limit,1) =~ s/(.)/chr(ord($1) + 1)/e;
+	return $_[1];
 }
 
 1;

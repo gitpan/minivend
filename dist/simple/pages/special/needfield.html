@@ -1,12 +1,11 @@
-<html> <head>
-<title>Required field(s) Missing</title>
-</head>
+[set page_title]We need some more information![/set]
+__LOGOBAR__
+__MENUBAR__
 
-[body 2]
-<h1>We need some more information!</h1>
+[title-bar color="__CONTRAST__"][scratch page_title][/title-bar]
 
 We need to have some fields entered to be able
-to process your order.  Please go back and fill out 
+to process your order.  Please [page __ORDER_STYLE__/checkout]go back</A> and fill out 
 the information.
 <P>
 Problem: 
@@ -42,5 +41,6 @@ Problem:
 	$msg;
 [/perl]
 <P>
-[buttonbar 0]
-</body></html>
+__MENUBOTTOM__
+__COPYRIGHT__
+<!-- current page: @@MV_PAGE@@ -->

@@ -1,440 +1,468 @@
 
+
                   W H A T ' S   N E W 
 
-MiniVend 3.07 is a major release adding complete POSIX-style
-I18N features and many other tag language enhancements.
+Everything. Well, not completely -- many MiniVend 3.x catalogs can
+run with few changes, but there will be changes.
+
+MiniVend 4.0 is a major rewrite that restructures many things.
+
+Minivend-4.0alpha12: 
+
+		-- added [banner ...]  tag to replace random/rotate,
+		   includes complete documentation
+		-- Glimpse works again.
+
+Major new features are almost too many to mention, read the documentation
+for the most complete description. Some highlights:
+
+* All lists are the same. The basic code for all lists is common, meaning
+  that the days of [sql-param ...] and [item-param ...] being different
+  are over.
+
+* All lists can have any prefix. This means that you can do:
+
+	[loop prefix=item list="99-102 00-0011a"]
+	[item-code] [item-field price]
+	[/loop]
+
+		or 
+
+	[loop prefix=color list="[item-accessories options, color"]
+	[color-code] [color-data colors name]
+	[/loop]
+	
+* All databases can do basic SQL queries, even MiniVend ones. These
+  three will/should work much the same on any MiniVend database type:
+
+  	[query sql="delete from inventory where code = '[item-code]'"]
+  	[/query]
+
+	[query sql="insert into inventory ('[item-code]', '[value new_number]'"]
+	[/query]
+
+	[query sql="update inventory set qty = '[value new_number]'
+				where code = '[item-code]']
+	[/query]
+
+	[query sql="select * from products"]
+	[/query]
+
+  All lists can have a [more-list], can be limited by mv_matchlimit, etc.
+
+* You can save queries to a variable space and then call them in code:
+
+	[query sql="select * from products" hashref=prod_table][/query]
+	[perl]
+		$products = $Query->{prod_table};
+		$mona_code = '00-0001';
+		foreach $ref (@$products) {
+			$artist = $ref->{artist}, last
+				if $ref->{code} eq $mona_code;
+		}
+		return "The Mona Lisa's artist is: " . $artist;
+	[/perl]
+
+* All databases and session-variable setting/reading parameters have a
+powerful cascading filter capability.
+
+	[data	table=products
+			col=artist
+			key=00-341] returns:      VAN GOGH, Vincent
+
+	[data	table=products
+			col=artist
+			key=00-341
+			filter="name namecase"
+			] returns:      Vincent Van Gogh
+
+	[data   table=products
+	        col=artist_formatted
+			key=00-341
+			filter="name namecase"
+			value"VAN GOGH, Vincent"
+			] stores:      Vincent Van Gogh
+
+The same thing works for [value ...], [cgi ...], etc. As well as
+for certain SQL query situations.
+	
+* Many new configuration prodedure capabilities:
+	
+	- #ifdef and #ifndef on Variable values
+	- #include files now included at point of entry instead of at
+	  end of process
+	- attach subroutines to configuration settings with Tie::Watch
+	- Set directives with code, also using Tie::Watch
+	- Require directive ensures that GlobalSub and global UserTag entries
+	  are present when moving a catalog
+
+* A new ASP-style syntax is supported:
+
+        <HTML MV=mvasp><BODY>This is HTML</BODY>
+        <%
+            $Document->write('This is code');
+        %>
+        HTML again.
+        <%
+            $Document->write('Code again.');
+        %>
+
+* A new Perl object set is consistent in all areas.
+
+	[perl]
+		$Document->write("Your name is $Values->{name}");
+	[/perl]
+
+	and 
+
+	[calc]
+		$Document->write("Your name is $Values->{name}");
+	[/calc]
+
+
+  are the same, as is:
 
-    * Complete multiple currency sets based on locale. Uses
-      standard POSIX definitions.
+  ActionMap  your_name <<EOR
+  sub {
+		$Document->write("Your name is $Values->{name}");
+		return;
+  }
+  EOR
 
-    * POSIX gettext/LC_MESSAGES style message display
-      for multiple language capabilities. A script called
-      localize is included which helps build Locale definitions.
+  Objects supported are:
 
-    * Price number display greatly enhanced.
+		$CGI->{key}              Hash reference to raw submitted values
+		$CGI_array->{key}        Hash reference to array submitted values
+		%Db                      Hash of available database tables
+		$DbSearch->method({})    Do searches in your code
+		$Document->write()       Writes to page
+		$Carts->{cartname}       Direct reference to shopping carts
+		$Config->{key}           Direct reference to $Vend::Cfg
+		$Scratch->{key}          Direct reference to scratch area
+		$Session->{key}          Direct reference to session area
+		%SQL                     Hash of available DBI database handles
+		$Tag->tagname(@args)     Call a tag as a routine (UserTag too!)
+		$Tag->tagname({ %args }) Call with hash-style naming too!
+		$TextSearch->method({})  Do searches in your code
+		$Values->{key}           Direct reference to user form values
+		&Log($msg)               Log to the error log
+		HTML $msg                Synonym for $Document->write($msg)
 
-    * Sort lists now can specify a beginning entry
-      and a length, allowing pageable browse lists. Previous
-      versions needed to be done entirely in Perl. Demo
-      includes example.
+* The search engine has been extensively reworked.
 
-    * Simple demo now uses NewTags by default. Several
-      deficiencies cleaned up.  Locale example (French front
-      page and currency) example given. Several additional
-      examples given. Examples using deprecated features
-      changed to use current features.
+	-- Word matching should be much more predictable
+	-- You can do grouping of search specifications
 
-    * Added simple user login facility as an add-on module.
-      documented in UserDB.pm and shown in the demo. This is
-      also a useful example of how you can add your own extensions
-      to MiniVend.
+  Glimpse is not yet integrated.
 
-    * All iterative lists now have an [item-next] and [item-last]
-      (or [loop-next] and [loop-last]) capability for exiting and
-      skipping entries in loops.
+* Tag parameters quoted with parameter=`code` are the equivalent of 
+  parameter="[calc]code[/calc]". They can be subroutine calls, too.
 
-    * PriceAdjustment now handles embedded MiniVend
-      tags, allowing completely flexible product pricing.
+* Tag parameters can be quoted with | to strip whitespace:
 
-    * OrderProfile and SearchProfile now can be specified
-      in the page.
+	[page  href=|
+				[value name="whatever"]
+				|]
 
-    * Cookies now set for every path and domain in Mall
-      mode.
+	is equivalent to 
 
-    It also fixes some bugs/deficiencies:
+	[page  href="[value name="whatever"]"]
 
-    * Static builds handle #name anchors when you use
-      [pagetarget page#name].
+*  Filters can be created with Filter directive
+   and/or [input-filter name=var op="uc"][/input-filter]
 
-    * Fixed simple demo so scratch directory 'tmp' gets
-      created on new install.
+	  uc          UPPER CASE 
+	  lc          lower case 
+	  digits      only digits
+	  word        only A-Z a-z _ 0-9
+	  urlencode   space becomes %20
+	  entities    < becomes &lt;
+	  strip       strip leading/trailing whitespace
+	  no_white    strip all whitespace
+	  gate        set to blank unless scratch variable
+				   with same name is non-blank
+	  n           (where n is an integer) length limit
+	  remove      delete existing filter (if any)
+
+* Filter directive allows filtering of certain CGI variables
+  for input conditioning; this is not session dependent and
+  automatically operates on any iteration of the variable...
+
+	Filter  phone  digits 10
 
-    * Documentation corrections.
+  That removes all non-digit values from the variable "phone",
+  then limits length to 10. Any session-based filters are applied
+  after this one.
 
-    * Search [more-list] did not work under Windows -- fixed.
+* [input-filter name=foo] CODE [/input-filter]
+
+  Sets a routine passed to the equivalent of a "[calc]" tag.
+  The value to be filtered is placed in the variable "$mv_filter_value",
+  and the name is set to "$mv_filter_name". It is possible to
+  do something like:
+
+	  [input-filter name=country tables=country]
+		my $val = $mv_filter_value;
+		my $prospect = &tag_data('country', 'name', $val);
+		return $prospect || $val;
+	  [/input-filter]
+
+  That will return the name of a country if it is found as a key
+  in the database (assuming the simple demo country definitions).
+  The tables=country directive is necessary to prepare the database
+  for access this early in the process.
+
+* Major improvements in the parser, notably optimization when
+  [pragma no_html_parse] and/or positional parameters are used.
+
+* ECML is supported via the Vend::ECML module. To map the 
+  checkout form values from MiniVend UserDB names, with an [ecml ...]
+  tag:
+
+		[ecml state]
+
+  is equivalent to:
 
-MiniVend 3.06 fixes some bugs with 3.05 and adds some features.
+		<INPUT TYPE=text
+			   VALUE="[value state]"
+			   NAME=Ecom_ShipTo_Postal_StateProv
+			   SIZE=2>
+
+* The [price] tag now supports pricing with attributes (size/color etc.).
+  If you do
 
-    * Catalog permissions configuration for multi-user,
-      multi-catalog servers greatly improved.
+		[price code=99-102 size=XL color=RED]
+		[price code=99-102 size=L color=RED]
+		[price code=99-102 size=L color=BLUE]
+
+  in the demo, this will demonstrate it.
+
+* The idiom:
+	
+	 #include directory/*
 
-    * Added [if ordered ...] back in, inadvertantly deleted
-      in 3.05.
+  now is supported (and used in the demo minivend.cfg file). This
+  includes all files in that directory (but not subdirectories)
+  and allows you to include the whole directory. It should make
+  maintaining multiple servers a bit easier.
 
-    * Added ! comparisons for [if ....][/if], [if-data ...],
-      [if-field ...] and the like.
+* Items can now be ordered "on-the-fly" in the standard
+  distribution by adding mv_order_fly.
 
-    * Made UserTag available globally in minivend.cfg.
+* Added form-remap based on catalog script-name (too early for
+  other methods). In minivend.cfg:
 
-    * Only call CPAN if it was previously used by somebody.
+		FormRemap  /cgi-bin/simple  code mv_order_item
+		FormRemap  /cgi-bin/simple  item mv_order_fly 
 
-    * PriceAdjustment can now be absolute, where an 
-      adjustment value of =10.99 will set the price
-      directly to 10.99. Previously the adjustment was
-      only relative to the single price for the item.
+* Made some major changes in the demo. Notably, MySQL should install
+  out of the box.
 
-    * Added new CONTINUE modifier to allow more flexible
-      specification of long database fields during ASCII
-      import. DITTO format allows you to add additional text
-      on the next line, while UNIX accepts \ as a line
-      continuation. This allows you to maintain very
-      large description fields while still remaining within
-      the 255 character limit of many databases and
-      spreadsheets.
+* Makecat now strips quotes from Apache parameters read from
+  httpd.conf file.
 
-    * Added passed default to [default variable]
-      tag, now can be [default variable passed-default].
+* Added Tagref.pm module which can document the implementation
+  of even UserTags. Add this to minivend.cfg to print one
+  to a MiniVend page:
 
-    * We can't always use POSIX::strftime anymore because of
-      bad RedHat 5.0 Perl release. 8-( A substitute routine is
-      provided and should be selected if POSIX::strftime doesn't
-      work. Instructions provided for making a good Perl, should
-      build OK.
+	UserTag tag-reference Routine <<EOR
+	sub {
+		require Vend::Tagref;
+		open (TAGREF, ">mv_tagref.pod");
+		my $reference = Vend::Tagref::tag_reference();
+		print TAGREF $reference;
+		close TAGREF;
+		my $out =  `pod2html mv_tagref.pod`;
+		if(! $out) {
+			 $Vend::StatusLine = "Content-Type: text/plain\r\n";
+			$out = $reference;
+		}
+		return $out;
+	}
+	EOR
 
-    * Added grouped items with mv_order_group. Using this,
-      Sub-items can be tied to a master item placed on a
-      form-based order.  The first mv_order_item defined
-      becomes the master, additional are sub-items. All
-      sub-items are deleted when a master item is deleted
-      from the cart.
+* Removed all dependencies on ProductsFiles containing 'products'.
 
-    * Fixed path problems with database/search path
-      resolution.
+* Complete internationalization of error messages via Locale,
+  sample locale.error file included.
 
-    * Fixed VendURL mangling when going to a SecureURL
-      with a different SCRIPT_NAME.
+* Added Legacy directive to minivend.cfg to support older
+  catalogs that don't define "products" database.
 
-    * [compat] [/compat] tag pairs are stripped from [old]
-      pages.
+* Catalog directive can now be specfied as:
 
-    * Static pages were shown to all browsers -- now only
-      shown to those which have given us back our cookie.
-
-    * [loop ...] lists are now reliably nested with 
-      [loop with="-a" arg="A B C"] or [loop-a 1 2 3].
-
-    * Tag end parsing fixed for [loop ...] and others that
-      auto-interpolate.
-
-    * Finally added a real debug facility, with multi-level
-      control and in-page display. Messages are still crude,
-      though, and user input is encouraged.
-
-    * Errors during catalog configuration are now
-      displayed to the console on startup.
-
-    * Slightly refined [more-list] to accept a different
-      border for selected and non-selected pages when using
-      images.
-
-    * Added error message in Windows install to prevent the
-      large number of questions from users who try to install
-      MiniVend without Perl 5.004 on the machine.
-
-    * CYGWIN.DLL now installed in SYSTEMROOT/system, not just
-      C:/windows/system.
-
-    * Tested on Windows NT 4.0 x386.
-
-MiniVend 3.05 is a major update that adds the following:
-
-    * Windows95/NT and UNIX versions unified, many changes
-      to handle line-ending differences
-
-    * SendMailProgram and EncryptProgram now accept 'none'
-      as parameters, avoid the need for external programs.
-
-    * Removed all autoloading options
-
-    * Added rotate "floor"
-
-    * Makecat program just a bit smarter about some things
-
-    * No UNIX command dependencies
-
-    * Removed sample demo from distribution, too outdated
-
-    * Catalogs can be added online
-
-    * Mode indicator file mode.{inet,unix} in MVROOT/etc
-
-    * Removed final vestiges of DES encryption
-
-    * Workaround for DBI <= 0.90 AutoCommit problem
-
-    * Went to multi-README files
-
-    Bug fixes include:
-
-    * Numerous fixes to sql_search (mv_searchtype=sql)
-
-    * Fixed tag_sort bug for multiple sorting of search lists
-
-    * Fixed [tag sql] query [/tag] to match docs
-
-    * Fixed missing Global variables
-
-    * Fixed close_database, no more SQL disconnect warnings
-
-    * Fixed bug in Windows file-based sessions
-
-MiniVend 3.04 is a minor release to fix bugs in 3.03:
-
-    * If file test was failing on a Safe trap. Fixed.
-
-    * PIPE databases did not work in 3.03 (only) -- they now
-      work well even for searching.
-
-    * Major bug in new parser fixed, now virtually every
-      tag should be parsed by MiniVend in 'NewTags Yes'
-      mode.  Switching to the new parser is recommended,
-      as new features will not be added to the old parser.
-
-    * New [elsif ...] addition to [if ...] was not
-      documented or announced.
-
-    * Perl 5.003 should run MiniVend without changes.
-
-    * Escape mechanism for values works properly.
-
-    * [include file] tag added.
-
-    * UserTag now accepts Interpolate option.
-
-    * Other minor bug fixes.
-
-MiniVend 3.03 has many bug fixes and feature set improvements.
-
-There is one incompatible change:
-
-    * If you are using Static builds, you must now define
-      'Static Yes' in the catalog.cfg file to get static
-      pages to build or run.  This was done to provide a
-      single "on/off" switch for static builds.
-
-As well as adding the following features/fixes:
-
-    * The new tag syntax is more reliable and trouble-free, 
-      and a UserTag directive allows user-defined tags. For example,
-      you can do:
-
-        UserTag  caps  Routine  sub { return "\U@_" }
-        UserTag  caps  HasEndTag
-
-      and have "[caps]uppercase[/caps]" become "UPPERCASE".
-
-      In addition, almost all old-style tags will be parsed
-      properly by the new tag parser.
-
-    * Sorting has been improved and regularized. All iterative
-      lists may be sorted with the same syntax, and all may be sorted
-      on any database field entry.
-
-        [search-list]
-        [sort products:category products:name:f]
-        ...
-        [/search-list]
-
-      The above will sort a search return on two fields in
-      the database -- and will work the same for shopping carts,
-      loop lists, and [tag each products].
- 
-      There are unlimited levels of sort, and all sorts may individually
-      have options for numeric, case-insensitive, and reverse. See the
-      section SORTING in minivend.html.
-
-    * Added [on-change name] tag to allow conditional nested search
-      display.
-
-    * Salestax bug fixed, 'default' now works.
-
-    * AllowGlobal lets certain "trusted" catalogs define global
-      subroutines. AdminSub restricts certain subroutine names.
-
-    * ImageAlias does the same thing for MiniVend images that
-      Apache/NCSA does with Alias.
-
-    * A robot defense now allows you to limit the number of line
-      items in the shopping cart or cut off access to a host that
-      accesses a certain number of pages without at least one 30 
-      second pause. Implemented with OrderLineLimit and RobotLimit
-      directives on a per-catalog basis, and the LockoutCommand
-      directive as a global parameter.
-
-    * SQL numerical types are now handled properly if you set the
-      NUMERIC option in catalog.cfg, i.e.:
-        
-        Database  products  NUMERIC price
-        Database  inventory NUMERIC on_hand
-
-    * The server will now fall back to UNIX mode only if the
-      TcpPort (7786 by default) is occupied and it cannot bind().
-      This does not apply if MiniVend was started in INET mode only,
-      but there will now be a better log message indicating the
-      server is stopped.
-
-    * Started allowing a lower case POST method -- many browsers
-      seem to violate the HTTP spec in that regard. This mitigates
-      the common "interaction error" problem.
-
-    * Fixed bug in CyberCash processing that allowed only the
-      'mauthcapture' mode.
-
-    * Deleted SearchOverMsg directive -- you must now set 
-      mv_search_over_msg directly if you want to use it.
-
-MiniVend 3.02 adds full SQL support. In addition, several minor
-demo flaws have been polished, and some bugs in the new geographic
-shipping changes have been fixed.
-
-Changes include:
-
-    * Full SQL support, including for ODBC, using the powerful
-      DBI/DBD interface. It should operate on all DBI-compliant drivers -- it
-      has been tested with MySQL, mSQL, Solid, ODBC, and PostgreSQL.
-
-    * All database documentation greatly improved.
-
-    * Geographic qualification for shipping works.
-
-    * mv_credit_card_valid now returned as blank false value
-      instead of 0 false value.
-
-    * =true added to order profile checks, will pass on Yes|True|1
-      and fail on anything else.
-
-MiniVend 3.00 is greatly changed from MiniVend 2.03, though catalogs
-should be almost completely compatible. The exceptions are one or two
-pricing and shipping database changes.  In both cases, there is available
-backward compatibility. 
-
-Changes include:
-
-    * Installation has been changed to fit the Perl model
-      of 'perl Makefile.PL; make; make test; make install'.
-      You can also just type './configure' to perform this
-      in one step.
-
-      Perl 5.004 allows retrieval and installation of MiniVend
-      with 'perl -MCPAN -e 'install Vend::Cart' at the 
-      command line.
-
-    * Catalog builder program improved to read Apache/NCSA-style
-      configuration files and supply some intelligent defaults.
-      Command-line editing and history are supported when teh
-      Term::Readline package is available.
-
-    * Optional modules automatically fetched with CPAN module
-      if available.
-
-    * A powerful static page building capability is in place.
-      This allows completely automated generation of static HTML
-      pages based on MiniVend databases.  Use it to build static
-      category lists and product pages that will load quickly without
-      the necessity of MiniVend parsing them.
-
-    * Dynamic page parsing speed is increased by about 30% when
-      using the standard syntax.
-
-    * Multiple product databases allow the breakout of product lines,
-      new-used product separation, multi-vendor order routing, and
-      more.  The database an item is ordered from is kept with the
-      item in the shopping cart, so items ordered with the same part
-      number from different databases will not overwrite each other.
-
-    * Database tables are now writeable.  Atomic incrementation is
-      supported, which means that reliable inventory counts can be
-      kept.  Form-based database updates are expanded to encompass
-      all databases, not just mSQL.
-
-    * Transactions can be logged to an arbitrary file in an arbitrary
-      format with [tag log file]data[/tag].
-
-    * Databases can be exported to an ASCII file with the [tag export ...]
-      [/tag] construct.
-
-    * Shipping is much improved, with built-in subroutine calls, 
-      error messages for out of bounds condtions, drop-in UPS zone
-      files, configurable handling charges, UPS cost rounding, geographic
-      qualification, and more regular syntax.
-
-    * Item attribute selection greatly improved, with automated building
-      of the item attribute selection.  Item attributes can easily be 
-      specified at the time of order.
-
-    * Item attributes can cause price adjustments on either an
-      item basis or attribute basis.
-
-    * Uses Data::Dumper's C-based uneval code when available,
-      improving session storage speed.
-
-    * Database tables are only actually opened when referenced,
-      improving speed greatly on systems that have a large number
-      of tables in the database.
-
-    * Experimental DBI/DBD example interface provided, which
-      will allow attachment of supported SQL databases like Solid,
-      Oracle, or Sybase. THIS IS EARLY ALPHA SOFTWARE. Use only on
-      an experimental basis, never with live data.
-
-    * Search engine has improved coordinated matching, with full
-      field-independent case-sensitivity, substring matching, and
-      negation.
-
-    * Search speed greatly improved when doing complex
-      field-coordinated searches.
-
-    * The FullUrl directive allows different virtual hosts to have
-      link programs with the same name, i.e. all named /cgi-bin/shop.
-
-    * A new (and still experimental) page syntax allows more regular
-      parsing of tags, removing some of the interpolation-order anomalies
-      inherent in the old-style tags. It can be invoked on individual
-      pages with the [new] tag.
-
-    * Search cacheing is much improved, and searches can be pre-built
-      when using the static page build capability.
-
-    * Pages can be cached, which especially improves performance of
-      large parsed pages. Static build is preferred to cache, but
-      with large databases it is not practical to build every item
-      in advance.
-
-    * Supports Perl 5.004 transparently, making runtime changes to
-      affected modules.
-
-    * Better security with the NoAbsolute, AdminPage, .access, and
-      AdminDatabase tags.
-
-    * Improved handling of cookies, with savable sessions and dynamic
-      expire times.
-
-    * Mailed orders may have MIME attachements. Though the author
-      loathes routinely-used MIME, it has value as a way to attach
-      an encrypted credit card number for easy processing by an
-      order entry workstation.
-
-    * Search sorting bugs fixed.
-
-    * New $Safe{'cgi'}->{form_value} access in embedded Perl allows
-      complex conditional search or order routines to be more
-      intelligent with regard to user input.
-
-    * New FormIgnore directive allows certain variables to be
-      expunged from the user session.
-
-    * Discounted prices can be displayed directly
-      with [discount-price].
-
-    * Cookies can be configured for expiration times and multiple
-      servers in a domain.
-
-    * Runs with taint checking enabled, even when using
-      most embedded Perl code.
-
-    * Many other minor bug fixes, improvements, and changes.
-
--------------------------------------------------------------
-
+	Catalog simple
+	Catalog simple dir    /home/minivend/simple
+	Catalog simple script /cgi-bin/simple
+	Catalog simple alias  /secure-bin/simple
+	Catalog simple alias  /simple
+	
+  Most importantly, certain global directives can be 
+  set on a catalog basis:
+
+  	Catalog simple directive ErrorFile /var/log/minivend/simple.log
+
+* The [more-list] tag now accepts a [decade-next][/decade-next] and
+  [decade-prev][/decade-prev] setting to break match lists into groups
+  of 10 pages. Alternatively, the search setting mv_more_decade can be
+  set true (two-letter equivalent is md=1) then you need not provide
+  the [decade-next] tag. Actually "decade" is a tad deceiving, for if 
+  mv_more_decade (or md=) is set to an integer greater than 1,
+  that is the number of pages that will be grouped.
+
+=head2 AutoModifier
+
+Sets an attribute in a shopping cart entry to the field of the same name
+in the ProductsFile pertaining to this item.
+
+This is useful when doing shipping calculations or other embedded Perl
+that is based on item attributes. To set whether an item is defined as
+"heavy" and requires truck shipment, you can do:
+
+	AutoModifier  heavy
+
+When an item is added to the shopping cart using MiniVend's routines, the
+C<heavy> attribute will be set to the value of the C<heavy> field in
+the products database. In the default demo that would be C<products>; any
+changes to C<ProductFiles> would affect that, of course.
+
+* Syslog error logging (global only) is supported via the
+  global SysLog directive.
+
+  	Syslog  command  /usr/bin/logger
+  	Syslog  tag      mv1
+  	Syslog  alert    local3.warn
+  	Syslog  warn     local3.info
+  	Syslog  info     local3.info
+
+  This would cause global errors to be logged with the command:
+
+		/usr/bin/logger -t mv1 -p local3.alert
+
+  and cause system log entries something like:
+
+	Oct 26 17:30:11 bill mv1: Config 'co' at server startup 
+	Oct 26 17:30:11 bill mv1: Config 'homefn' at server startup 
+	Oct 26 17:30:11 bill mv1: Config 'simple' at server startup 
+	Oct 26 17:30:11 bill mv1: Config 'test' at server startup 
+	Oct 26 17:30:13 bill mv1: START server (2345) (INET and UNIX) 
+
+  This facility is alpha and is subject to change. Of course you can
+  wrap your own wrapper around it to get it to behave how you want.
+
+* Added Scratch variable mv_data_enable to gate the update_data 
+  function; prior to this it was possible to update a database
+  willy-nilly.
+
+* Many bug fixes, of course. Notably [and ...] and [or ..]
+  were broken in some cases.
+
+* "Message" directive allows you to display messages at startup, both
+  global and catalog.
+
+REMOVAL
+
+Many things were removed as redundant, deprecated, or just plain 
+crufty:
+
+* All frame features removed, frames are managed by the user in HTML.
+
+* Tags removed:
+
+buttonbar       Replace with Variable.
+random          Replace with [ad random=1] or custom code
+rotate          Replace with [ad ...]
+help            No replacement
+body            Replace with templates
+finish_order    No replacement
+last_page       No replacement
+item-link       No replacement, just use [page [item-code]]
+loop-link       No replacement, just use [page [loop-code]]
+sql-link        No replacement, just use [page [sql-code]]
+accessories     Replace with normal data functions
+
+* Compatibility routines for many popular tags like [random], [rotate], etc.
+are provided in the compat/ directory.  To use, include the files in minivend.cfg:
+
+	#include compat/*
+
+* Directives removed:
+
+	ActionMap
+	AdminDatabase
+	AdminPage
+	AsciiBackend
+	BackendOrder
+	ButtonBars
+	CheckoutFrame
+	CheckoutPage
+	CollectData
+	DataDir
+	Delimiter
+	DescriptionTrim
+	FieldDelimiter
+	FrameFlyPage
+	FrameLinkDir
+	FrameOrderPage
+	FrameSearchPage
+	ItemLinkDir
+	ItemLinkValue
+	MsqlDB
+	MsqlProducts
+	Mv_AlinkColor
+	Mv_Background
+	Mv_BgColor
+	Mv_LinkColor
+	Mv_TextColor
+	Mv_VlinkColor
+	NewReport
+	NewTags
+	OldShipping
+	OrderFrame
+	PageCache
+	PriceDatabase
+	Random
+	ReceiptPage
+	RecordDelimiter
+	ReportIgnore
+	Rotate
+	SearchFrame
+	SearchOverMsg
+	SecureOrderMsg
+	SpecialFile
+	SubArgs
+	Tracking
+
+* Minor operations removed:
+
+	- auto-substitution of mp= on [loop search=profile],
+	  [search-region arg=profile]
+	- [tag scan]...
+	- [tag sql]...
+
+Many of these are related to one of:
+
+	* Removal of frames logic
+	* Removed tags
+	* Obsolete methods
+	* Old routines for 2.0x compatibility
+
+----------------------------
+UPGRADING from MiniVend 3
+
+Form Data updates:
+
+	* Added Scratch variable mv_data_enable to gate the update_data 
+	  function; prior to this it was possible to update a database
+	  willy-nilly. Do:
+
+			[set update_database]
+			[if type=data term="userdb::trusted::[data session username]"]
+				[set mv_data_enable]1[/set]
+			[else]
+				[set mv_data_enable]0[/set]
+			[/else]
+			[/if]
+			[/set]
+			<INPUT TYPE=hidden NAME=mv_click VALUE=update_database>
 
