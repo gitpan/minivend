@@ -1,4 +1,4 @@
-# MiniVend V3.00
+# MiniVend V3.03
 # 
 # Copyright 1996,1997 by Michael J. Heins <mikeh@minivend.com>
 #
@@ -8,19 +8,28 @@
 # Portions from Vend 0.3
 # Copyright 1995,1996 by Andrew M. Wilcox <awilcox@world.std.com>
 #
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# This program is free software; most users can redistribute it
+# and/or modify it under the terms of the GNU General Public
+# License as published by the Free Software Foundation; either
+# version 2 of the License, or (at your option) any later
+# version. The only exception is that any organization employing
+# uninvited commercial email solicitations, commonly known as
+# SPAM, may not use MiniVend for a period of one year after any
+# SPAM incident. Failure to discontinue use immediately upon 
+# written notice will cause the charge of a $1,000 per day license
+# fee until such time as MiniVend use is discontinued. The author
+# of MiniVend, Michael J. Heins, shall be the sole judge of what
+# constitutes a SPAM incident.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+# You should have received a copy of the GNU General Public
+# License along with this program; if not, write to the Free
+# Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139,
+# USA.
 
 Welcome to MiniVend, based on Vend, Andrew Wilcox's fine
 shopping cart program.  This program is completely unsupported,
@@ -31,6 +40,106 @@ Please feel free to send them to Mike Heins, <mikeh@minivend.com>.
 -------------------------------------------------------------
 
                       W H A T ' S   N E W 
+
+MiniVend 3.03 has many bug fixes and feature set improvements.
+
+There is one incompatible change:
+
+	* If you are using Static builds, you must now define
+	  'Static Yes' in the catalog.cfg file to get static
+	  pages to build or run.  This was done to provide a
+	  single "on/off" switch for static builds.
+
+As well as adding the following features/fixes:
+
+    * The new tag syntax is more reliable and trouble-free, 
+      and a UserTag directive allows user-defined tags. For example,
+      you can do:
+
+        UserTag  caps  Routine  sub { return "\U@_" }
+        UserTag  caps  HasEndTag
+
+      and have "[caps]uppercase[/caps]" become "UPPERCASE".
+
+      In addition, almost all old-style tags will be parsed
+      properly by the new tag parser.
+
+    * Sorting has been improved and regularized. All iterative
+      lists may be sorted with the same syntax, and all may be sorted
+      on any database field entry.
+
+	  	[search-list]
+		[sort products:category products:name:f]
+		...
+		[/search-list]
+
+      The above will sort a search return on two fields in
+      the database -- and will work the same for shopping carts,
+      loop lists, and [tag each products].
+      
+      There are unlimited levels of sort, and all sorts may individually
+      have options for numeric, case-insensitive, and reverse. See the
+      section SORTING in minivend.html.
+
+    * Added [on-change name] tag to allow conditional nested search
+      display.
+
+    * Salestax bug fixed, 'default' now works.
+
+    * AllowGlobal lets certain "trusted" catalogs define global
+      subroutines. AdminSub restricts certain subroutine names.
+
+    * ImageAlias does the same thing for MiniVend images that
+      Apache/NCSA does with Alias.
+
+    * A robot defense now allows you to limit the number of line
+      items in the shopping cart or cut off access to a host that
+      accesses a certain number of pages without at least one 30 
+      second pause. Implemented with OrderLineLimit and RobotLimit
+      directives on a per-catalog basis, and the LockoutCommand
+      directive as a global parameter.
+    
+    * SQL numerical types are now handled properly if you set the
+      NUMERIC option in catalog.cfg, i.e.:
+        
+        Database  products  NUMERIC price
+        Database  inventory NUMERIC on_hand
+    
+    * The server will now fall back to UNIX mode only if the
+      TcpPort (7786 by default) is occupied and it cannot bind().
+      This does not apply if MiniVend was started in INET mode only,
+      but there will now be a better log message indicating the
+      server is stopped.
+
+    * Started allowing a lower case POST method -- many browsers
+      seem to violate the HTTP spec in that regard. This mitigates
+      the common "interaction error" problem.
+
+    * Fixed bug in CyberCash processing that allowed only the
+      'mauthcapture' mode.
+
+    * Deleted SearchOverMsg directive -- you must now set 
+      mv_search_over_msg directly if you want to use it.
+
+MiniVend 3.02 adds full SQL support. In addition, several minor
+demo flaws have been polished, and some bugs in the new geographic
+shipping changes have been fixed.
+
+Changes include:
+
+    * Full SQL support, including for ODBC, using the powerful
+      DBI/DBD interface. It should operate on all DBI-compliant drivers -- it
+      has been tested with MySQL, mSQL, Solid, ODBC, and PostgreSQL.
+
+    * All database documentation greatly improved.
+
+    * Geographic qualification for shipping works.
+
+    * mv_credit_card_valid now returned as blank false value
+      instead of 0 false value.
+
+    * =true added to order profile checks, will pass on Yes|True|1
+      and fail on anything else.
 
 MiniVend 3.00 is greatly changed from MiniVend 2.03, though catalogs
 should be almost completely compatible. The exceptions are one or two
@@ -50,8 +159,8 @@ Changes include:
 
     * Catalog builder program improved to read Apache/NCSA-style
       configuration files and supply some intelligent defaults.
-      Command-line editing and history are supported when the
-      Term::ReadLine package is available.
+      Command-line editing and history are supported when teh
+      Term::Readline package is available.
 
     * Optional modules automatically fetched with CPAN module
       if available.
@@ -71,7 +180,7 @@ Changes include:
       item in the shopping cart, so items ordered with the same part
       number from different databases will not overwrite each other.
 
-    * Database tables are now writable.  Atomic incrementation is
+    * Database tables are now writeable.  Atomic incrementation is
       supported, which means that reliable inventory counts can be
       kept.  Form-based database updates are expanded to encompass
       all databases, not just mSQL.
@@ -83,7 +192,7 @@ Changes include:
       [/tag] construct.
 
     * Shipping is much improved, with built-in subroutine calls, 
-      error messages for out of bounds conditions, drop-in UPS zone
+      error messages for out of bounds condtions, drop-in UPS zone
       files, configurable handling charges, UPS cost rounding, geographic
       qualification, and more regular syntax.
 
@@ -121,7 +230,7 @@ Changes include:
       inherent in the old-style tags. It can be invoked on individual
       pages with the [new] tag.
 
-    * Search caching is much improved, and searches can be pre-built
+    * Search cacheing is much improved, and searches can be pre-built
       when using the static page build capability.
 
     * Pages can be cached, which especially improves performance of
@@ -138,7 +247,7 @@ Changes include:
     * Improved handling of cookies, with savable sessions and dynamic
       expire times.
 
-    * Mailed orders may have MIME attachments. Though the author
+    * Mailed orders may have MIME attachements. Though the author
       loathes routinely-used MIME, it has value as a way to attach
       an encrypted credit card number for easy processing by an
       order entry workstation.
@@ -340,7 +449,7 @@ IRIX, Solaris, Digital UNIX:
            The server may not terminate immediately,
            as the select() call blocks signals. It
            will stop at the next request, or at the
-           end of the occasional housekeeping
+           end of the occasional houskeeping
            cycle, set by the directive HouseKeeping in
            minivend.cfg.  If you want it to stop more
            quickly than the default (up to) 60 seconds,
@@ -372,7 +481,7 @@ Solaris:   You must use the File::Lock module -- flock()
 
            If you have Perl 5.004, you may be able to
            disregard File::Lock -- MiniVend will try if
-           appropriate.
+           appropriage.
 
            GCC compilation problems should disappear in this
            release.
@@ -398,7 +507,7 @@ Solaris:   You must use the File::Lock module -- flock()
 
        * Users maintain a "shopping cart" for ordered items
        * Multiple independent or shared catalogs allow one server
-         to run many store fronts or a "mall"
+         to run many storefronts or a "mall"
        * SSL support means secure and practical credit card ordering
        * PGP support for secure off-site mailing of orders
        * Catalogs can be of almost unlimited size with excellent
@@ -458,7 +567,7 @@ Solaris:   You must use the File::Lock module -- flock()
         * Runs under Perl 5 and almost any UNIX
         * Designed to be secure
         * Built-in online help capability
-        * Off line database builds
+        * Offline database builds
         * Static page build option for high performance
         * Works well with all browsers
 
@@ -471,7 +580,7 @@ Solaris:   You must use the File::Lock module -- flock()
     utility, and continues to be free under the GNU copyleft.
 
     To learn more about MiniVend, see the HTML documentation, visit
-    the official MiniVend site, or download it.
+    the offical MiniVend site, or download it.
 
 -------------------------------------------------------------------
 

@@ -1,10 +1,8 @@
-Changes
 Copying
 MANIFEST
 Makefile.PL
 README
 configure
-dist/LOW_MEMORY
 dist/README
 dist/bin/autosplit
 dist/bin/buildtree
@@ -44,7 +42,6 @@ dist/sample/html/minivend.html
 dist/sample/html/special1.html
 dist/sample/html/special2.html
 dist/sample/html/special3.html
-dist/sample/html/tags.html
 dist/sample/html/toc.html
 dist/sample/images/00-0011.jpg
 dist/sample/images/00-341.jpg
@@ -150,6 +147,7 @@ dist/sample/pages/srch/search.html
 dist/sample/pages/srch/sortresults.html
 dist/sample/products/accessories.asc
 dist/sample/products/arbitrary.asc
+dist/sample/products/inventory.asc
 dist/sample/products/pricing.asc
 dist/sample/products/products.asc
 dist/sample/products/salestax.asc
@@ -168,7 +166,6 @@ dist/simple/etc/report
 dist/simple/etc/search.profiles
 dist/simple/html/index.html
 dist/simple/html/minivend.html
-dist/simple/html/tags.html
 dist/simple/html/toc.html
 dist/simple/images/00-0011.jpg
 dist/simple/images/00-341.jpg
@@ -253,6 +250,7 @@ dist/simple/pages/special/tech5.html
 dist/simple/pages/special/violation.html
 dist/simple/pages/srchform.html
 dist/simple/products/accessories.asc
+dist/simple/products/inventory.asc
 dist/simple/products/pricing.asc
 dist/simple/products/products.asc
 dist/simple/products/salestax.asc
@@ -260,6 +258,7 @@ dist/simple/products/shipping.asc
 dist/simple/reconfig
 dist/simple/report_problem
 dist/simple/session/.empty
+dist/src/File-Lock-0.9.tar
 dist/src/config.h.in
 dist/src/configure
 dist/src/configure.in
@@ -272,7 +271,6 @@ dist/src/vlink.c
 dist/src/vlink.pl
 doc/intro.html
 doc/minivend.html
-doc/tags.html
 doc/toc.html
 lib/Carp.pm
 lib/File/Basename.pm
