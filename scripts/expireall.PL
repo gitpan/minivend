@@ -8,6 +8,11 @@ require 'scripts/initp.pl';
 
 sub doit {
 	my ($key) = @_;
+	my $val;
+	if ($MV::Self->{RPMBUILDDIR} and $val = $MV::Self->{$key}) {
+		$val =~ s!^$MV::Self->{RPMBUILDDIR}/!/!; 
+		return $val;
+	}
 	return $MV::Self->{$key} unless $key =~ /[a-z]/;
 	return $Config{$key};
 }
@@ -42,21 +47,29 @@ my $query;
 
 $USAGE = <<EOF;
 Expire all listed MiniVend catalogs. Will read information from
-either:
+either the file passed with -f or:
 
 	$VendRoot/minivend.cfg
-	$VendRoot/catalogs.list
 
-usage: expireall [-r]
+usage: expireall [-r] [-f file]
 
+	-f    Alternate minivend.cfg file
 	-r    Use reorganize parameter in command
 
 EOF
 
-getopts('r') or die "$@\n$USAGE\n";
+getopts('e:f:r') or die "$@\n$USAGE\n";
+
+my $Configfile = $opt_f || "$VendRoot/minivend.cfg";
+
+my $flag = '';
 
 if ($opt_r) {
-	$flag = '-r';
+	$flag .= '-r';
+}
+
+if($opt_e) {
+	$flag .= qq{ -e "$opt_e"};
 }
 
 # Parse the minivend.cfg file to look for script/catalog info
@@ -64,29 +77,15 @@ PARSECFG: {
 	my $file;
 	my @cfglines;
 
-	$file = "$VendRoot/minivend.cfg";
-	open(MVCFG, $file) or die "Couldn't read $file: $!\n";
+	open(MVCFG, $Configfile) or die "Couldn't read $Configfile: $!\n";
 	while(<MVCFG>) { push(@cfglines, $_) if /^\s*catalog\s+/i }
 	close MVCFG;
 
-	eval {
-		$file = "$VendRoot/catalogs.list";
-		open(MVCFG, $file) or die "Couldn't read $file: $!\n";
-		while(<MVCFG>) { push(@cfglines, $_) if /^\s*catalog\s+/i }
-		close MVCFG;
-	};
-	eval {
-		$file = "$VendRoot/active.catalogs";
-		open(MVCFG, $file) or die "Couldn't read $file: $!\n";
-		while(<MVCFG>) { push(@cfglines, $_) if /^\s*catalog\s+/i }
-		close MVCFG;
-		rename $file, "$file.bak";
-	};
 	my %seen;
 	@cfglines = grep !$seen{$_}++, @cfglines;
 
 	for(@cfglines) {
-		next unless /^\s*catalog\s+([-\w_]+)/i;
+		next unless /^\s*(?:sub)?catalog\s+([-\w_]+)/i;
 		push @cats, $1;
 	}
 
@@ -102,11 +101,16 @@ expireall -- Run Minivend expire on all catalogs
 
 =head1 VERSION
 
-$Id: expireall,v 1.2 2000/01/03 18:31:40 mike Exp $
+$Id: expireall,v 1.4 2000/03/09 13:34:29 mike Exp mike $
 
 =head1 DESCRIPTION
 
 Skeleton POD to avoid make errors.
+
+=head1 SEE ALSO
+
+mvdocs(8), expire(1), http://www.minivend.com
+
 
 =cut
 _EoP_

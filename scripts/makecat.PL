@@ -8,6 +8,11 @@ require 'scripts/initp.pl';
 
 sub doit {
 	my ($key) = @_;
+	my $val;
+	if ($MV::Self->{RPMBUILDDIR} and $val = $MV::Self->{$key}) {
+		$val =~ s!^$MV::Self->{RPMBUILDDIR}/!/!; 
+		return $val;
+	}
 	return $MV::Self->{$key} unless $key =~ /[a-z]/;
 	return $Config{$key};
 }
@@ -45,7 +50,7 @@ use lib '/usr/local/minivend';
 BEGIN {
 	($VendRoot = $ENV{MINIVEND_ROOT})
 		if defined $ENV{MINIVEND_ROOT};
-	$VendRoot = $VendRoot || '/usr/local/minivend';
+	$VendRoot = $VendRoot || '/work/minivend';
 #	$VendRoot = $VendRoot || '~_~INSTALLARCHLIB~_~';
 
 	$ProgRoot = '/usr/local/minivend';
@@ -99,7 +104,7 @@ options:
     --minivenduser=username  The user ID which runs MiniVend
     --serverconf=filename    Location of httpd.conf
     --vendroot=filename      Location of MiniVend software
-	--homedir=directory      Use instead of \$HOME to set defaults
+    --homedir=directory      Use instead of \$HOME to set defaults
 
     Required:
     --catroot=directory      Directory where MiniVend catalog files go
@@ -111,17 +116,19 @@ options:
 
     Optional:
     --catuser=username       The user files should be owned by (if root)
-    --samplehtml=directory   The directory where template HTML goes
     --imagedir=directory     The directory where template images go
     --imageurl=url           The URL to prefix images with
+    --linkmode=mode          UNIX or INET (link program vlink or tlink)
+    --linkprogram=file       Use file as link program instead of vlink/tlink
     --nocfg                  Don't add to minivend.cfg
     --nocopy                 Don't actually copy the files, just test
     --norunning              Don't add to running server
-    --reference              Return hash of config as string (sets -F, no write)
-    --linkprogram=file       Use file as link program instead of vlink/tlink
-    --linkmode=mode          UNIX or INET (link program vlink or tlink)
-    --sampleurl=url          URL to access HTML for catalog
     --noumask                Don't set umask
+    --permtype=[M|G|U]       Set permission type (Multi, Group, User)
+    --reference              Return hash of config as string (sets -F, no write)
+    --relocate=dir           Directory to relocate files to (for RPM and such)
+    --samplehtml=directory   The directory where template HTML goes
+    --sampleurl=url          URL to access HTML for catalog
 
 EOF
 
@@ -158,8 +165,10 @@ my %optctl = (
     'nocopy'            => \$Conf{nocopy},
     'norunning'         => \$Conf{norunning},
     'noumask'           => \$Conf{noumask},
+    'permtype'          => \$Conf{permtype},
     'r'                 => \$Reconfigure,
     'reference'         => \$Conf{reference},
+    'relocate'          => \$Conf{relocate},
     'samplehtml'        => \$Conf{samplehtml},
     'sampleurl'         => \$Conf{sampleurl},
     'serverconf'        => \$Conf{serverconf},
@@ -204,8 +213,10 @@ my @options = ( qw/
     nocfg
     nocopy
     norunning
+    permtype=s
     r
     reference
+    relocate=s
     samplehtml|html=s
     sampleurl=s
     serverconf|conf=s
@@ -482,6 +493,7 @@ my %Postprocess = (
 	imagedir		=> \&strip_trailing_slash,
 	samplehtml		=> \&strip_trailing_slash,
 	catroot			=> \&strip_trailing_slash,
+	relocate		=> \&strip_trailing_slash,
 
 );
 
@@ -1124,14 +1136,14 @@ else {
 $Conf{'perl'} = $Config{perlpath};
 
 # Now change to the directory defined as VendRoot
-chdir $Conf{vendroot}
-	or die "Couldn't change directory to $Conf{vendroot}: $!\n";
+chdir "$Conf{relocate}$Conf{vendroot}"
+	or die "Couldn't change directory to $Conf{relocate}$Conf{vendroot}: $!\n";
 
 $warn = 0;
 $msg = q# supposed to be a directory, not a file. Can't continue.#;
 for ( $Conf{catroot}, $Conf{documentroot}, $Conf{basedir},
 	$Conf{samplehtml}, $Conf{imagedir} ) {
-	next unless -f $_;
+	next unless -f "$Conf{relocate}$_";
 	print "$_ $msg\n";
 	$warn++;
 }
@@ -1147,9 +1159,9 @@ SETLINKMODE: {
 	}
 	if ($Windows) {
 		$Conf{linkmode} = 'INET';
-		$prog = -f "$VendRoot/win/tlink.exe"
-				? "$VendRoot/win/tlink.exe"
-				: "$ProgRoot/win/tlink.exe";
+		$prog = -f "$Conf{relocate}$Conf{vendroot}/win/tlink.exe"
+				? "$Conf{relocate}$Conf{vendroot}/win/tlink.exe"
+				: "$Conf{relocate}$ProgRoot/win/tlink.exe";
 		last SETLINKMODE;
 	}
 	print <<EOF;
@@ -1174,13 +1186,13 @@ EOF
 	
 	$ask = prompt("INET or UNIX mode? ", $default);
 
-	$prog = "$VendRoot/src/vlink";
+	$prog = "$Conf{relocate}$Conf{vendroot}/src/vlink";
 
 	if($ask =~ /^\s*i/i) {
 		$lm = "i";
 		$Inetmode = 1;
 
-		$prog = "$VendRoot/src/tlink";
+		$prog = "$Conf{relocate}$Conf{vendroot}/src/tlink";
 
 		$default = 7786;
 		my $lp;
@@ -1218,6 +1230,7 @@ FINDPROG: {
 			$cmd .= "-$lm " if $lm;
 			$cmd .= "-p $lp " if $lp;
 			$cmd .= "-h $lh " if $lh;
+			$cmd .= "--relocate $Conf{relocate}"  if $Conf{relocate};
 			system $cmd;
 			$tried_compile = 1;
 			redo FINDPROG;
@@ -1285,22 +1298,22 @@ for($Conf{catroot}, $Conf{samplehtml}, $Conf{imagedir}) {
 
 if($warn) {
 	for(qw(catroot samplehtml imagedir)) {
-		$dir = $Conf{$_};
-
+		$dir = "$Conf{relocate}$Conf{$_}";
+#print "doing dir=$dir\n";
 		# Allow nocopy
 		next if $dir =~ /^\s*none\s*$/i;
 
 		(warn "\n$_ is empty, skipping.\n", next)
 			unless $dir =~ /\S/;
 		unless(-d $dir or prefix('nocopy') ) {
-			File::Path::mkpath([$dir], 0, 0775)
+			File::Path::mkpath([$dir], 1, 0775)
 				or die "Couldn't make directory $dir: $!\n";
 		}
 	}
 }
 
 for(qw(catroot samplehtml imagedir)) {
-	$dir = $Conf{$_};
+	$dir = "$Conf{relocate}$Conf{$_}";
 
 	# Allow nocopy
 	next if $dir =~ /^\s*none\s*$/i;
@@ -1324,16 +1337,16 @@ print "done.\n";
 
 # Now change to the directory defined as VendRoot if the checks
 # have left us elsewhere
-chdir $Conf{vendroot}
-	or die "Couldn't change directory to $Conf{vendroot}: $!\n";
+chdir "$Conf{relocate}$Conf{vendroot}"
+		or die "Couldn't change directory to $Conf{relocate}$Conf{vendroot}: $!\n";
 
 print do_msg("Copying demo files");
-unless (-d $Conf{'demotype'}) {
-	print "No $Conf{vendroot}/$Conf{'demotype'} directory is present,\n";
-	$dir = prompt("where should the files come from? ", '');
+unless (-d "$Conf{relocate}$Conf{vendroot}/$Conf{demotype}") {
+	print "No $Conf{relocate}$Conf{vendroot}/$Conf{demotype} directory is present,\n";
+	$dir = prompt("where should the files come from? ", "$Conf{relocate}$Conf{catroot}");
 }
 else {
-	$dir = $Conf{'demotype'};
+	$dir = "$Conf{relocate}$Conf{vendroot}/$Conf{demotype}";
 }
 
 # Do some additional configuration if the additional_fields
@@ -1426,13 +1439,14 @@ DOCOPY: {
 
 	chdir $dir || die "Couldn't change directory to $dir: $!\n";
 
+
 	# This is what we used to do
 	#system "tar -cf - * | (cd $Conf{catroot}; tar -xf -)";
 
 	umask(07) unless $Conf{noumask};
 
 	eval {
-		copy_current_to_dir($Conf{catroot});
+		copy_current_to_dir("$Conf{relocate}$Conf{catroot}");
 	};
 
 	umask(022) unless $Conf{noumask};
@@ -1446,19 +1460,14 @@ EOF
 	}
 
 	unless($prog eq 'NONE') {
-		File::Copy::copy( $prog, "$Conf{catroot}/executable")
+		File::Copy::copy( $prog, "$Conf{relocate}$Conf{catroot}/executable")
 			or die "Couldn't copy link program from $prog: $!\n";
 	}
 
 	print "done.\n";
 
-chdir $Conf{catroot} 
- 	|| die "Couldn't change directory to $Conf{catroot}: $!\n";
-
-%Xfile = ( qw(
-                reconfig        1
-                report_problem  1
-            ) );
+chdir "$Conf{relocate}$Conf{catroot}"
+ 	|| die "Couldn't change directory to $Conf{relocate}$Conf{catroot}: $!\n";
 
 my ($umode, $gmode);
 
@@ -1537,6 +1546,7 @@ sub wanted {
 		rename ("$file.new", $file)
 			or die "Couldn't rename $name.new to $name: $!\n";
 	}
+	my %Xfile;
 	if($Windows) {
 		# None of this stuff applies for Windows, I don't think.
 		# Put Win-specific stuff here.
@@ -1557,12 +1567,12 @@ sub wanted {
 }
 	
 	$File::Find::dont_use_nlink = 1;
-	set_owner($Conf{catroot});
-	File::Find::find(\&wanted, $Conf{catroot});
+	set_owner("$Conf{relocate}$Conf{catroot}");
+	File::Find::find(\&wanted, "$Conf{relocate}$Conf{catroot}");
 
 	$cginame = $Conf{cgiurl};
 	$cginame =~ s:.*/::;
-	$Conf{cgifile} = $cginame = "$Conf{cgidir}/$cginame";
+	$Conf{cgifile} = $cginame = "$Conf{relocate}$Conf{cgidir}/$cginame";
 	
 	umask(022) unless $Conf{noumask};
 
@@ -1574,12 +1584,12 @@ sub wanted {
 		}
 
 		if(is_yes($ask_cgi)) {
-			File::Copy::copy("$Conf{catroot}/executable", $cginame)
+			File::Copy::copy("$Conf{relocate}$Conf{catroot}/executable", $cginame)
 				or die
 				"\nCouldn't copy link executable from $prog to $cginame: $!\n";
 			chmod 0755, $cginame   
 					or die "\nCouldn't make $cginame executable: $!\n";
-			unlink "$Conf{catroot}/executable";
+			unlink "$Conf{relocate}$Conf{catroot}/executable";
 		}
 
 		if($isroot) {
@@ -1630,20 +1640,20 @@ EOF
 		print do_msg("Moving HTML files to $Conf{samplehtml}");
 		eval {
 			chdir 'html' or ++$ok and die "\nchdir html: $!\n";
-			copy_current_to_dir($Conf{samplehtml});
+			copy_current_to_dir("$Conf{relocate}$Conf{samplehtml}");
 			chdir '..';
 			File::Path::rmtree('html'); 
 		};
 
 
 		if($@ and !$ok) {
-			die "\nCouldn't move HTML files to $Conf{samplehtml}: $@\n";
+			die "\nCouldn't move HTML files to $Conf{relocate}$Conf{samplehtml}: $@\n";
 		}
 		elsif ($ok) {
 			warn "\nHTML dir copy error: $!\nTrying to continue.\n";
 		}
 		else {
-			File::Find::find( $chg_to_catuser, $Conf{samplehtml})
+			File::Find::find( $chg_to_catuser, "$Conf{relocate}$Conf{samplehtml}")
 				if $isroot;
 		}
 
@@ -1655,27 +1665,27 @@ EOF
 		print do_msg("Moving image files to $Conf{imagedir}");
 		eval {
 			chdir 'images' or ++$ok and die "chdir images: $!\n";
-			copy_current_to_dir($Conf{imagedir});
+			copy_current_to_dir("$Conf{relocate}$Conf{imagedir}");
 			chdir '..';
 			File::Path::rmtree('images');
 		};
 			
 		if($@ and !$ok) {
-			die "\nCouldn't move image files $Conf{imagedir}: $@\n";
+			die "\nCouldn't move image files $Conf{relocate}$Conf{imagedir}: $@\n";
 		}   
 		elsif ($ok) {
 			warn "\nImage dir copy error: $!\nTrying to continue.\n";
 		}
 		else {
-			File::Find::find($chg_to_catuser, $Conf{imagedir})
+			File::Find::find($chg_to_catuser, "$Conf{relocate}$Conf{imagedir}")
 				if $isroot;
 		}
  
 		print "done.\n";
 	}
 
-	chdir $Conf{vendroot}
-		or die "\nCouldn't change directory to $VendRoot: $!\n";
+	chdir "$Conf{relocate}$Conf{vendroot}"
+		or die "\nCouldn't change directory to $Conf{relocate}$Conf{vendroot}: $!\n";
 
 	my $pidfile = 'etc/minivend.pid';
 	PID: {
@@ -1911,7 +1921,7 @@ makecat [--options] name
 
 =head1 VERSION
 
-$Id: makecat,v 1.3 2000/02/06 01:53:09 mike Exp mike $
+$Id: makecat,v 1.5 2000/03/09 13:34:59 mike Exp mike $
 
 =head1 INTRODUCTION
 
@@ -2273,6 +2283,10 @@ MiniVend requires Perl 5.005 or higher; more information on Perl can
 be seen at:
 
         http://www.perl.com
+
+=head1 SEE ALSO
+
+mvdocs(8), minivend(1), http://www.minivend.com
 
 =head1 LICENSE
 
